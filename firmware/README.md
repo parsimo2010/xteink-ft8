@@ -7,16 +7,24 @@ git submodule at `freeink-sdk/`.
 ## Prereqs
 
 * PlatformIO Core (`pipx install platformio`, or the CLI bundled with VS Code)
-* A submodule checkout: `git submodule update --init --recursive`
-* Your call / grid / WiFi credentials set in `include/config.h`
+* **Python 3.10–3.13.** The Arduino-ESP32 toolchain does **not** support 3.14.
+  Use `python3.12` / `py -3.12` if your default is 3.14.
+* A submodule checkout: `git clone --recurse-submodules ...` or
+  `git submodule update --init --recursive`
+* Your WiFi credentials (and bridge address) set in `include/config.h`
 
 ## Build & flash
 
 ```bash
-pio run -e x4pro            # compile
-pio run -e x4pro -t upload  # flash over USB
-pio device monitor         # serial logs (optional)
+pio run -e x4pro             # compile
+pio run -e x4pro -t upload   # flash over USB (put the X4 Pro in download mode first)
+pio device monitor           # serial logs (optional)
 ```
+
+> **Entering download mode:** hold the left/up nav button (GPIO0) while
+> pressing reset / power-cycling. See **`../docs/FLASHING.md`** for full
+> flashing-from-stock instructions, download-mode details, and how to restore
+> the stock firmware.
 
 ## Layout
 
@@ -29,6 +37,14 @@ pio device monitor         # serial logs (optional)
 | `include/ui.h` / `src/ui.cpp` | 1-bit framebuffer renderer |
 | `src/main.cpp` | app: message handling, input, screens, rendering |
 | `freeink-sdk/` | FreeInk SDK (submodule) |
+
+## Configuration
+
+Edit `include/config.h`:
+* `WIFI_SSID` / `WIFI_PASSWORD` — the Pi access point (must match `setup_ap.sh`).
+* `BRIDGE_HOST` / `BRIDGE_PORT` — the Pi AP IP (`192.168.4.1`) and port (`4510`).
+* `MY_CALL` / `MY_GRID` — optional; the callsign configured in WSJT-X is used
+  as the source of truth once connected.
 
 ## How it works
 

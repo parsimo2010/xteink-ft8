@@ -1,0 +1,91 @@
+name: release
+
+# Builds prebuilt firmware + bridge artifacts for a version tag.
+# Triggered only when a v*.*.* tag is pushed (see docs/RELEASE.md).
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware
+        working-directory: firmware
+        run: pio run -e x4pro
+
+      - name: Run bridge tests
+        working-directory: bridge
+        run: python test_bridge.py
+
+      - name: Package firmware
+        id: firmware
+        run: |
+          set -euo pipefail
+          VER="${{ github.ref_name }}"
+          pio=~/.platformio/packages
+          mkdir -p dist/fw
+          cp firmware/.pio/build/x4pro/bootloader.bin dist/fw/
+          cp firmware/.pio/build/x4pro/partitions.bin dist/fw/
+          cp "$pio/framework-arduinoespressif32/tools/partitions/boot_app0.bin" dist/fw/ 2>/dev/null || true
+          cp firmware/.pio/build/x4pro/firmware.bin dist/fw/
+          cat > dist/fw/flash.sh <<'EOF'
+          #!/usr/bin/env bash
+          # Flash the Xteink X4 Pro (put it in download mode first).
+          # Usage: flash.sh <PORT>   e.g. ./flash.sh /dev/ttyACM0  (Windows: COM3)
+          set -euo pipefail
+          PORT="${1:?usage: flash.sh <PORT>}"
+          esptool.py --chip esp32s3 --port "$PORT" --baud 921600 write_flash -z \
+            0x0      bootloader.bin \
+            0x8000   partitions.bin \
+            0xe000   boot_app0.bin \
+            0x10000  firmware.bin
+          EOF
+          chmod +x dist/fw/flash.sh
+          (cd dist/fw && zip -r ../xteink-ft8-firmware-${VER}.zip .)
+          echo "asset=dist/xteink-ft8-firmware-${VER}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Package bridge
+        id: bridge
+        run: |
+          set -euo pipefail
+          VER="${{ github.ref_name }}"
+          mkdir -p dist/bridge
+          cp -r bridge/xteink_bridge.py bridge/wsjtx_udp.py bridge/qso_tracker.py \
+                bridge/device_server.py bridge/rigctl.py bridge/scripts bridge/README.md dist/bridge/
+          (cd dist/bridge && zip -r ../xteink-ft8-bridge-${VER}.zip .)
+          echo "asset=dist/xteink-ft8-bridge-${VER}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            xteink-ft8 ${{ github.ref_name }}
+
+            ## Assets
+            * `xteink-ft8-firmware-<ver>.zip` — flash the X4 Pro (see docs/FLASHING.md)
+            * `xteink-ft8-bridge-<ver>.zip` — Raspberry Pi bridge (see docs/SETUP.md)
+
+            See docs/RELEASE.md for the validation checklist behind this release.
+          files: |
+            dist/xteink-ft8-firmware-${{ github.ref_name }}.zip
+            dist/xteink-ft8-bridge-${{ github.ref_name }}.zip

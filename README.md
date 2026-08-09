@@ -24,6 +24,22 @@ this works from a mountain top or a park.
 
 ---
 
+## Getting started
+
+* **Raspberry Pi** — step-by-step setup (AP, WSJT-X, bridge, headless
+  auto-start): [`docs/SETUP.md`](docs/SETUP.md)
+* **X4 Pro** — building and flashing from stock firmware:
+  [`docs/FLASHING.md`](docs/FLASHING.md)
+* **Device ⇄ bridge protocol**: [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
+* **Future prebuilt releases**: [`docs/RELEASE.md`](docs/RELEASE.md)
+
+> No release is published yet — this is a first prototype awaiting hardware
+> validation. If you build from source, you need **Python 3.10–3.13** for the
+> firmware toolchain and the FreeInk SDK submodule
+> (`git clone --recurse-submodules`).
+
+---
+
 ## Project layout
 
 ```
@@ -33,15 +49,18 @@ xteink-ft8/
 │   ├── wsjtx_udp.py       WSJT-X UDP protocol encode/decode (pure struct)
 │   ├── device_server.py   TCP server the X4 Pro connects to
 │   ├── qso_tracker.py     CQ decode tracking + QSO state
-│   └── rigctl.py          band change via Hamlib rigctld (optional)
+│   ├── rigctl.py          band change via Hamlib rigctld (optional)
+│   └── scripts/           systemd autostart, AP setup, WSJT-X preseed
 ├── firmware/          Xteink X4 Pro firmware (PlatformIO + FreeInk SDK)
 │   ├── platformio.ini
-│   ├── include/           app.h proto.h ui.h net_client.h font5x7.h ...
+│   ├── include/           config.h proto.h ui.h net_client.h font5x7.h ...
 │   └── src/               main.cpp proto.cpp ui.cpp net_client.cpp
 ├── docs/
+│   ├── SETUP.md           Raspberry Pi step-by-step deployment
+│   ├── FLASHING.md        X4 Pro build + flash from stock
 │   ├── PROTOCOL.md        device <-> bridge TCP protocol spec
-│   └── SETUP.md           configuring WSJT-X, the Pi AP, and the device
-└── .reference/            (git-ignored) clones of crosspoint + freeink-sdk
+│   └── RELEASE.md         future prebuilt-release plan
+└── .github/workflows/     CI that builds firmware + bridge on version tags
 ```
 
 ## The two halves

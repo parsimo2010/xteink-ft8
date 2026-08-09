@@ -41,4 +41,6 @@ Band changes need Hamlib `rigctld` running (independent of WSJT-X's own rig
 link). Start `rigctld` and pass `--rig-host/--rig-port`. Without it the `qsy`
 device command replies `not_supported`.
 
-See `../docs/SETUP.md` for full field deployment.
+See **`../docs/SETUP.md`** for full field deployment (including headless
+auto-start via systemd) and **`../docs/FLASHING.md`** for the X4 Pro. The
+`scripts/` directory has the one-time installer and access-point setup.
