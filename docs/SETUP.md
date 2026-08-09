@@ -55,8 +55,8 @@ python3 xteink_bridge.py --help
 python3 xteink_bridge.py                # defaults: Rx 127.0.0.1:2238, controls to 127.0.0.1:2237, device on 0.0.0.0:4510
 ```
 
-Use `--device-if` / `--listen` to bind the device server to a specific address
-if needed. Run under `systemd` or `tmux` in the field.
+Use `--listen` to bind the device server to a specific address if needed.
+Run under `systemd` in the field (see §Auto-start below).
 
 ### Optional: band change via rigctld
 
@@ -68,6 +68,43 @@ python3 xteink_bridge.py --rig-host 127.0.0.1 --rig-port 4532
 ```
 
 If `rigctld` is unreachable the `qsy` command degrades to `not_supported`.
+
+## 3b. Headless auto-start (one-time setup at home)
+
+Everything is installed once with a single script. After this, field boots
+bring up the AP, WSJT-X, and the bridge automatically with **no keyboard,
+mouse, or screen**:
+
+```bash
+cd bridge
+sudo scripts/install.sh          # installs systemd units + deps (xvfb, wsjtx)
+sudo scripts/setup_ap.sh         # configures the WiFi access point
+WSJTXCALL=W9XYZ WSJTXGRID=EM48 scripts/preseed_wsjtx.sh
+```
+
+What each piece does on boot:
+
+* **`setup_ap.sh`** — writes `/etc/hostapd/hostapd.conf` + `/etc/dnsmasq.conf`
+  and enables them, so the Pi is its own AP (`XTEINK-FT8` / `ft8field`,
+  `192.168.4.1/24`) at boot.
+* **`xteink-wsjtx.service`** + **`start_wsjtx_xvfb.sh`** — starts an `Xvfb`
+  virtual display and launches WSJT-X on it. WSJT-X is a GUI app but never needs
+  a real display in the field; the X4 Pro is the UI. (Add `x11vnc` if you want
+  to view it remotely.)
+* **`xteink-bridge.service`** — starts the bridge after networking is up.
+* **`preseed_wsjtx.sh`** — best-effort write of your callsign/grid and the UDP
+  ports into WSJT-X's config so you don't have to touch it over VNC. The INI
+  format varies by WSJT-X version, so verify once over VNC (Settings →
+  Reporting): UDP Server `127.0.0.1:2238`, **Accept UDP requests** **checked**,
+  and **Auto Seq** enabled for hands-free QSO completion.
+
+> **One-time VNC config is still recommended** (acceptable per the field
+> requirement): confirm the two UDP fields, the callsign/grid, rig/FDX, and
+> "Auto Seq". After that, field boots are fully automatic.
+
+**Field boot sequence:** power the Pi → wait ~1–2 min (AP + bridge + WSJT-X
+come up) → power the X4 Pro, which joins the AP and connects to
+`192.168.4.1:4510` automatically.
 
 ## 4. Firmware — build and flash
 

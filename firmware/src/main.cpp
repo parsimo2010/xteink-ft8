@@ -168,7 +168,11 @@ void send_cq() {
   JsonDocument cmd;
   set_cmd(cmd, "send_cq");
   char msg[40];
-  snprintf(msg, sizeof(msg), "CQ %s %s", cfg::MY_CALL, cfg::MY_GRID);
+  // Use the callsign/grid from WSJT-X (via the bridge) as the single source of
+  // truth; fall back to the config constants only until a Status/hello lands.
+  const char* call = g_status.myCall[0] ? g_status.myCall : cfg::MY_CALL;
+  const char* grid = g_status.myGrid[0] ? g_status.myGrid : cfg::MY_GRID;
+  snprintf(msg, sizeof(msg), "CQ %s %s", call, grid);
   cmd["text"] = msg;
   net.send(std::move(cmd));
 }

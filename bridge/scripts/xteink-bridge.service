@@ -1,0 +1,19 @@
+# xteink-ft8 bridge — systemd service
+# Installed by scripts/install.sh. See docs/SETUP.md.
+[Unit]
+Description=xteink-ft8 WSJT-X bridge
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+# Adjust the ExecStart path to your checkout location.
+ExecStart=/usr/bin/python3 %h/xteink-ft8/bridge/xteink_bridge.py
+Restart=always
+RestartSec=5
+User=pi
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+# xteink-ft8 WSJT-X — headless autostart on a virtual display.
+# Installed by scripts/install.sh. See docs/SETUP.md.
+[Unit]
+Description=WSJT-X on a virtual (Xvfb) display
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/xteink-ft8/bridge/scripts/start_wsjtx_xvfb.sh
+Restart=always
+RestartSec=5
+User=pi
+Environment=DISPLAY=:1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
