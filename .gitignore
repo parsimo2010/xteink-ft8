@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# PlatformIO (firmware)
+firmware/.pio/
+firmware/.cache/
+firmware/data/
+firmware/lib/
+firmware/.vscode/
+
+# Reference clones (large, not part of the repo)
+.reference/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

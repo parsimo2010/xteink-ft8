@@ -1,0 +1,1 @@
+# Pure Python 3 stdlib — no third-party dependencies required.
