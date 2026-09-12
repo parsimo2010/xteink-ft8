@@ -33,8 +33,9 @@ this works from a mountain top or a park.
 * **Device ⇄ bridge protocol**: [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
 * **Future prebuilt releases**: [`docs/RELEASE.md`](docs/RELEASE.md)
 
-> No release is published yet — this is a first prototype awaiting hardware
-> validation. If you build from source, you need **Python 3.10–3.13** for the
+> No release is published yet — hardware bring-up is done (the firmware boots
+> and runs on a real X4 Pro) but the end-to-end field link is still being
+> validated. If you build from source, you need **Python 3.10–3.13** for the
 > firmware toolchain and the FreeInk SDK submodule
 > (`git clone --recurse-submodules`).
 
@@ -83,12 +84,17 @@ Pure Python 3 stdlib — no third-party dependencies to install on the Pi.
 Built on the **FreeInk SDK** (the same display/input stack CrossPoint uses),
 targeted for the ESP32-S3 X4 Pro profile:
 
-* **Display:** 800×480 SSD1677 e-paper (borrowed driver from FreeInk).
-* **Input:** GT911 capacitive touch + two nav buttons + power button.
+* **Display:** 800×480 SSD1677 e-paper (borrowed driver from FreeInk), driven
+  in a **portrait** (480×800) logical layout via a software framebuffer
+  transpose — the panel RAM is landscape-only.
+* **Input:** GT911 capacitive touch (taps flash the control for feedback) +
+  two page-turn buttons for scrolling + a power button (hold to deep-sleep).
 * **Networking:** WiFi client that joins the Pi's AP and connects to the bridge
-  TCP server.
+  TCP server; a framing error just drops + reconnects the socket (it can never
+  permanently desync the link). Shows **NO-LINK** and stays fully re-flashable
+  over USB whenever the Pi is absent.
 * **UI:** a compact immediate-mode renderer with an embedded 5×7 bitmap font
-  (self-contained; FreeInkUI/CrossPoint's GfxRenderer can be layered on later).
+  upscaled to 8×11 for readability on the 800×480 panel.
 
 The e-ink panel is the key: it sips power, is readable in full sunlight, and
 shows a live FT8 band map without draining the battery.
@@ -119,13 +125,17 @@ WSJT-X does the FT8 protocol heavy lifting.
 
 ## Status
 
-This is a **first prototype** intended to be tested once hardware arrives. It
-has not yet been run on real hardware. Expect to tune:
+Hardware bring-up is **done**: as of 2026-09-12 the firmware has been flashed
+and boots on a real X4 Pro — portrait e-ink rendering, GT911 touch (with
+tap-flash feedback), page buttons, and hold-power deep sleep are all confirmed
+on-device. Still being validated end-to-end: joining the Pi AP, receiving live
+CQ decodes, and completing a real QSO via WSJT-X (see `docs/RELEASE.md`).
 
-* X4 Pro pin/profile details (the FreeInk X4 Pro profile is largely hardware-
-  *confirmed*, but a couple of items are still pending validation).
+No prebuilt release is published yet — that waits for the Pi link + a real
+QSO. Expect to tune:
+
 * The bridge's WSJT-X UDP schema handling across WSJT-X versions.
-* UI layout/metrics on the actual 800×480 panel.
+* The `<<` / `>>` band-change ladder (currently a simple single-QSY stub).
 
 See `docs/` for build and field-deployment instructions.
 

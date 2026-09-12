@@ -39,16 +39,21 @@ void NetClient::update() {
   }
 
   // --- Read inbound frames into the queue ---------------------------------
+  // Only enter the blocking read when bytes are actually waiting, and drop +
+  // reconnect on any framing error so a corrupt frame can't desync the stream.
   if (_client.connected()) {
-    JsonDocument doc;
-    int r = read_frame(_client, doc, cfg::TCP_TIMEOUT_MS);
-    if (r == 1) {
-      String s;
-      serializeJson(doc, s);
-      enqueue_rx(s);
-    } else if (r == 0) {
+    while (_client.available()) {
+      JsonDocument doc;
+      int r = read_frame(_client, doc, cfg::TCP_TIMEOUT_MS);
+      if (r == 1) {
+        String s;
+        serializeJson(doc, s);
+        enqueue_rx(s);
+        continue;
+      }
       _client.stop();
       _connected = false;
+      break;
     }
   } else {
     _connected = false;

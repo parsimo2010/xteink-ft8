@@ -5,6 +5,7 @@ classify messages and build replies. The device only needs to see stations we
 can actually call, so non-CQ decodes are filtered out by default.
 """
 
+import json
 import re
 
 # FT8 message patterns we surface as "callable" stations.
@@ -19,6 +20,8 @@ _CQ_RE = re.compile(
 
 MAX_DECODES = 200  # prune the list beyond this many
 DECODE_TTL_SECONDS = 600  # drop decodes older than this (10 min)
+MAX_SNAPSHOT = 60  # most decodes handed to a device in one snapshot
+MAX_SNAPSHOT_BYTES = 12000  # keep snapshots under the 16 KB frame cap
 
 
 class Decode:
@@ -115,7 +118,11 @@ class QsoTracker:
         return [d for d in self._decodes if d.is_cq]
 
     def snapshot(self, now_ts):
-        return {"seq": self._next_id, "decodes": [d.as_dict() for d in self.cq_list(now_ts)]}
+        """Newest CQ decodes, capped so the framed reply stays under 16 KB."""
+        entries = [d.as_dict() for d in self.cq_list(now_ts)][-MAX_SNAPSHOT:]
+        while entries and sum(len(json.dumps(e, separators=(",", ":"))) + 1 for e in entries) > MAX_SNAPSHOT_BYTES:
+            entries.pop(0)
+        return {"seq": self._next_id, "decodes": entries}
 
     def ack(self, seq):
         """Drop decodes with id <= seq (the device has them)."""

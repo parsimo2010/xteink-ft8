@@ -3,8 +3,9 @@
 This replaces the stock Xteink OS on the X4 Pro with the xteink-ft8 firmware.
 **You can restore the stock firmware later** (see "Restoring stock firmware").
 
-> **Status:** this is a first prototype. It has not yet been run on real
-> hardware. Proceed on hardware you are willing to experiment on.
+> **Status:** the first prototype has been flashed and **boots on a real X4
+> Pro** (portrait e-ink, touch, and deep sleep confirmed on hardware). Flashing
+> is fully reversible — see "Restoring stock firmware".
 
 ---
 

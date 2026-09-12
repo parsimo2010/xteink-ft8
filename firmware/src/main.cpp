@@ -2,6 +2,7 @@
 #include <BoardConfig.h>
 #include <EInkDisplay.h>
 #include <InputManager.h>
+#include <PowerManager.h>
 #include <XteinkDetect.h>
 
 #include "config.h"
@@ -48,6 +49,15 @@ StatusInfo g_status = {"", "", "", "FT8", "", false, false};
 // Scroll offset into g_rows.
 int g_scroll = 0;
 
+// --- Layout metrics (logical space; portrait = transformed by Ui) -----------
+int g_lw = 800, g_lh = 480;      // logical screen size
+int g_visRows = 16;              // list rows that fit between the bars
+
+inline int contentW() { return g_lw - 2 * cfg::UI_MARGIN; }
+inline int contentH() { return g_lh - 2 * cfg::UI_MARGIN; }
+inline int rowsTop() { return cfg::UI_MARGIN + cfg::STATUS_H; }
+inline int actionBarTop() { return cfg::UI_MARGIN + contentH() - cfg::ACTION_H; }
+
 // --- UI state ----------------------------------------------------------------
 enum class Screen { List, QsoDetail };
 Screen g_screen = Screen::List;
@@ -57,6 +67,12 @@ char g_detailGrid[5] = "";
 
 bool g_dirty = true;
 uint32_t g_lastRefresh = 0;
+
+// --- Tap visual feedback: one control drawn inverted for a moment ------------
+uint32_t g_flashUntil = 0;
+int g_fx = 0, g_fy = 0, g_fw = 0, g_fh = 0;
+char g_flashLabel[12] = "";
+Screen g_flashScreen = Screen::List;   // overlay only draws on its source screen
 
 // ---------------------------------------------------------------------------
 // Forward decls
@@ -68,6 +84,23 @@ void send_reply(const Decode& d);
 void send_cmd_qsy(int dir);
 void send_halt();
 void send_cq();
+void maybe_enter_sleep();
+void flash_control(int x, int y, int w, int h, const char* label);
+void render_sleep();
+
+// ===========================================================================
+// Tap feedback
+// ===========================================================================
+void flash_control(int x, int y, int w, int h, const char* label) {
+  g_fx = x;
+  g_fy = y;
+  g_fw = w;
+  g_fh = h;
+  strlcpy(g_flashLabel, label, sizeof(g_flashLabel));
+  g_flashScreen = g_screen;
+  g_flashUntil = millis() + cfg::TAP_FLASH_MS;
+  g_dirty = true;
+}
 
 // ===========================================================================
 // Networking message handling
@@ -110,6 +143,7 @@ void handle_msg(const JsonDocument& doc) {
   } else if (strcmp(type, "decodes") == 0) {
     // Snapshot from the bridge (on hello / get_decodes).
     g_rowCount = 0;
+    g_scroll = 0;
     JsonArrayConst arr = doc["decodes"].as<JsonArrayConst>();
     for (JsonObjectConst o : arr) {
       if (g_rowCount >= MAX_ROWS) break;
@@ -138,6 +172,7 @@ void handle_msg(const JsonDocument& doc) {
     // The hello carries a snapshot; ingest it.
     JsonArrayConst arr = doc["decodes"]["decodes"].as<JsonArrayConst>();
     g_rowCount = 0;
+    g_scroll = 0;
     for (JsonObjectConst o : arr) {
       if (g_rowCount >= MAX_ROWS) break;
       Decode& d = g_rows[g_rowCount++];
@@ -200,27 +235,35 @@ void send_cmd_qsy(int dir) {
 // Input
 // ===========================================================================
 void on_tap(int xPx, int yPx) {
-  uint16_t W = display.getDisplayWidth();
-  uint16_t H = display.getDisplayHeight();
-
   if (g_screen == Screen::QsoDetail) {
     // Back / Halt regions at the bottom.
-    if (yPx >= H - cfg::ACTION_H) {
-      if (xPx < W / 2) {
-        g_screen = Screen::List;
-        g_dirty = true;
-      } else {
-        send_halt();
+    if (yPx >= actionBarTop()) {
+      int dx = xPx - cfg::UI_MARGIN;
+      if (dx >= 0 && dx < contentW()) {
+        int bw = contentW() / 2;
+        bool back = dx < contentW() / 2;
+        flash_control(cfg::UI_MARGIN + (back ? 0 : bw), actionBarTop(), bw, cfg::ACTION_H,
+                      back ? "Back" : "Halt");
+        if (back) {
+          g_screen = Screen::List;
+        } else {
+          send_halt();
+        }
       }
     }
     return;
   }
 
   // Action bar.
-  if (yPx >= H - cfg::ACTION_H) {
+  if (yPx >= actionBarTop()) {
+    int dx = xPx - cfg::UI_MARGIN;
+    if (dx < 0 || dx >= contentW()) return;
     int n = 5;  // CQ, <<, >>, Refresh, Halt
-    int bw = W / n;
-    int idx = xPx / bw;
+    const char* labels[5] = {"CQ", "<<", ">>", "RFR", "Halt"};
+    int bw = contentW() / n;
+    int idx = dx / bw;
+    if (idx >= n) idx = n - 1;
+    flash_control(cfg::UI_MARGIN + idx * bw, actionBarTop(), bw, cfg::ACTION_H, labels[idx]);
     switch (idx) {
       case 0: send_cq(); break;
       case 1: send_cmd_qsy(-1); break;
@@ -229,7 +272,6 @@ void on_tap(int xPx, int yPx) {
         JsonDocument c;
         set_cmd(c, "get_decodes");
         net.send(std::move(c));
-        g_dirty = true;
         break;
       }
       case 4: send_halt(); break;
@@ -238,19 +280,40 @@ void on_tap(int xPx, int yPx) {
     return;
   }
 
-  // List area: tap a row to reply.
-  int rowFirst = cfg::STATUS_H;
-  int rowH = cfg::ROW_H;
-  int idx = (yPx - rowFirst) / rowH + g_scroll;
-  if (idx >= 0 && idx < g_rowCount) {
-    const Decode& d = g_rows[idx];
-    send_reply(d);
-    g_detailId = d.id;
-    strlcpy(g_detailCall, d.call, sizeof(g_detailCall));
-    strlcpy(g_detailGrid, d.grid, sizeof(g_detailGrid));
-    g_screen = Screen::QsoDetail;
-    g_dirty = true;
+  // List area: tap a row to reply. Taps on the status bar do nothing.
+  if (yPx >= rowsTop() && yPx < actionBarTop()) {
+    int idx = (yPx - rowsTop()) / cfg::ROW_H + g_scroll;
+    if (idx >= 0 && idx < g_rowCount && idx < g_scroll + g_visRows) {
+      const Decode& d = g_rows[idx];
+      send_reply(d);
+      g_detailId = d.id;
+      strlcpy(g_detailCall, d.call, sizeof(g_detailCall));
+      strlcpy(g_detailGrid, d.grid, sizeof(g_detailGrid));
+      g_screen = Screen::QsoDetail;
+      g_dirty = true;
+    }
   }
+}
+
+// ===========================================================================
+// Power: hold the power button -> panel + chip deep sleep.
+// The e-ink image persists without power; any power-button press wakes the
+// device with a cold boot.
+// ===========================================================================
+void maybe_enter_sleep() {
+  static bool powerSeenReleased = false;
+  if (!input.isPressed(InputManager::BTN_POWER)) {
+    powerSeenReleased = true;
+    return;
+  }
+  if (!powerSeenReleased) return;  // ignore a hold that powered the unit on
+  if (input.getPowerButtonHeldTime() < cfg::POWER_HOLD_SLEEP_MS) return;
+
+  render_sleep();
+  Serial.flush();
+  display.deepSleep();
+  freeink::PowerManager::powerDownRailsForSleep();
+  freeink::PowerManager::deepSleepUntilPowerButton();  // noreturn
 }
 
 // ===========================================================================
@@ -260,18 +323,19 @@ void render_status_bar() {
   char line[64];
   snprintf(line, sizeof(line), "%s%s %s %s %s", g_status.link ? "" : "NO-LINK ",
            g_status.band, g_status.mode, g_status.myCall, g_status.myGrid);
-  ui.text(4, (cfg::STATUS_H - 7) / 2, line, true);
+  int ty = cfg::UI_MARGIN + (cfg::STATUS_H - Ui::GLYPH_H) / 2;
+  ui.text(cfg::UI_MARGIN + 4, ty, line, true);
   if (g_status.transmitting) {
-    ui.text(cfg::STATUS_H + 4 + 400, (cfg::STATUS_H - 7) / 2, "TX", true);
+    ui.text(cfg::UI_MARGIN + contentW() - 4 - ui.textWidth("TX"), ty, "TX", true);
   }
-  ui.hline(0, cfg::STATUS_H - 1, display.getDisplayWidth(), true);
+  ui.hline(cfg::UI_MARGIN, cfg::UI_MARGIN + cfg::STATUS_H - 1, contentW(), true);
 }
 
 void render_list() {
-  int y = cfg::STATUS_H;
+  int y = rowsTop();
   int rowH = cfg::ROW_H;
   int first = g_scroll;
-  int last = first + cfg::VISIBLE_ROWS;
+  int last = first + g_visRows;
   if (last > g_rowCount) last = g_rowCount;
 
   for (int i = first; i < last; i++, y += rowH) {
@@ -280,55 +344,52 @@ void render_list() {
     // Call + grid + snr + offset, padded for readability.
     char callPart[12];
     snprintf(callPart, sizeof(callPart), "%-10.10s", d.call);
-    char gridPart[5];
-    snprintf(gridPart, sizeof(gridPart), "%s", d.grid);
     snprintf(line, sizeof(line), "%s %s %3ddB %5d",
-             callPart, gridPart, d.snr, d.dfreq);
-    ui.text(6, y + (rowH - 7) / 2, line, true);
-    ui.hline(0, y + rowH - 1, display.getDisplayWidth(), false);
+             callPart, d.grid, d.snr, d.dfreq);
+    ui.text(cfg::UI_MARGIN + 6, y + (rowH - Ui::GLYPH_H) / 2, line, true);
+    ui.hline(cfg::UI_MARGIN, y + rowH - 1, contentW(), false);
   }
   if (g_rowCount == 0) {
-    ui.text(6, cfg::STATUS_H + 20, "Waiting for CQ decodes...", true);
+    ui.text(cfg::UI_MARGIN + 6, rowsTop() + 20, "Waiting for CQ decodes...", true);
   }
 }
 
 void render_action_bar() {
-  int y = display.getDisplayHeight() - cfg::ACTION_H;
+  int y = actionBarTop();
   int n = 5;
-  int bw = display.getDisplayWidth() / n;
+  int bw = contentW() / n;
   const char* labels[5] = {"CQ", "<<", ">>", "RFR", "Halt"};
   for (int i = 0; i < n; i++) {
-    int x = i * bw;
+    int x = cfg::UI_MARGIN + i * bw;
     ui.rect(x, y, bw, cfg::ACTION_H, true);
-    ui.text(x + (bw - ui.textWidth(labels[i])) / 2, y + (cfg::ACTION_H - 7) / 2, labels[i], true);
+    ui.text(x + (bw - ui.textWidth(labels[i])) / 2, y + (cfg::ACTION_H - Ui::GLYPH_H) / 2, labels[i], true);
   }
 }
 
 void render_detail() {
   ui.clear();
   char line[64];
+  int x = cfg::UI_MARGIN + 6;
   snprintf(line, sizeof(line), "QSO: %s %s", g_detailCall, g_detailGrid);
-  ui.text(6, 20, line, true);
+  ui.text(x, cfg::UI_MARGIN + 24, line, true);
 
-  snprintf(line, sizeof(line), "TX: %s", g_status.txMessage);
-  ui.text(6, 40, line, true);
+  snprintf(line, sizeof(line), "TX: %.40s", g_status.txMessage);
+  ui.text(x, cfg::UI_MARGIN + 52, line, true);
 
   snprintf(line, sizeof(line), "View: %s %s %s", g_status.band, g_status.mode, g_status.transmitting ? "TX" : "RX");
-  ui.text(6, 60, line, true);
+  ui.text(x, cfg::UI_MARGIN + 80, line, true);
 
-  int W = display.getDisplayWidth();
-  int H = display.getDisplayHeight();
-  int bw = W / 2;
-  int y = H - cfg::ACTION_H;
-  ui.rect(0, y, bw, cfg::ACTION_H, true);
-  ui.text(bw / 2 - ui.textWidth("Back") / 2, y + (cfg::ACTION_H - 7) / 2, "Back", true);
-  ui.rect(bw, y, bw, cfg::ACTION_H, true);
-  ui.text(bw + bw / 2 - ui.textWidth("Halt") / 2, y + (cfg::ACTION_H - 7) / 2, "Halt", true);
+  int y = actionBarTop();
+  int bw = contentW() / 2;
+  ui.rect(cfg::UI_MARGIN, y, bw, cfg::ACTION_H, true);
+  ui.text(cfg::UI_MARGIN + bw / 2 - ui.textWidth("Back") / 2, y + (cfg::ACTION_H - Ui::GLYPH_H) / 2, "Back", true);
+  ui.rect(cfg::UI_MARGIN + bw, y, bw, cfg::ACTION_H, true);
+  ui.text(cfg::UI_MARGIN + bw + bw / 2 - ui.textWidth("Halt") / 2, y + (cfg::ACTION_H - Ui::GLYPH_H) / 2, "Halt", true);
 }
 
 void render() {
   uint8_t* fb = display.getFrameBuffer();
-  ui.setTarget(fb, display.getDisplayWidth(), display.getDisplayHeight());
+  ui.setTarget(fb, g_lw, g_lh, display.getDisplayWidth(), display.getDisplayHeight(), cfg::UI_ROTATION);
   ui.clear();
 
   if (g_screen == Screen::List) {
@@ -338,7 +399,27 @@ void render() {
   } else {
     render_detail();
   }
+
+  // Momentary inverted overlay on the tapped control (works with no link).
+  if (g_flashScreen == g_screen && g_flashUntil && (int32_t)(millis() - g_flashUntil) < 0) {
+    ui.fill(g_fx, g_fy, g_fw, g_fh, true);
+    uint16_t tw = ui.textWidth(g_flashLabel);
+    ui.text(g_fx + (g_fw - (int)tw) / 2, g_fy + (g_fh - Ui::GLYPH_H) / 2, g_flashLabel, false);
+  }
   display.displayBuffer(EPD::FAST_REFRESH);
+}
+
+void render_sleep() {
+  uint8_t* fb = display.getFrameBuffer();
+  ui.setTarget(fb, g_lw, g_lh, display.getDisplayWidth(), display.getDisplayHeight(), cfg::UI_ROTATION);
+  ui.clear();
+  const char* big = "SLEEPING";
+  int by = g_lh / 2 - Ui::LARGE_H / 2;
+  ui.textLarge((g_lw - (int)ui.textLargeWidth(big)) / 2, by, big, true);
+  const char* sub = "Press power to wake";
+  ui.text((g_lw - (int)ui.textWidth(sub)) / 2, by + Ui::LARGE_H + 16, sub, true);
+  g_flashUntil = 0;
+  display.displayBuffer(EPD::FULL_REFRESH);
 }
 
 // ===========================================================================
@@ -356,14 +437,28 @@ void setup() {
   display.clearScreen();
   display.displayBuffer(EPD::FULL_REFRESH);  // initial full refresh
 
+  const bool portrait = cfg::UI_ROTATION != 0;
+  g_lw = portrait ? (int)display.getDisplayHeight() : (int)display.getDisplayWidth();
+  g_lh = portrait ? (int)display.getDisplayWidth() : (int)display.getDisplayHeight();
+  g_visRows = (contentH() - cfg::STATUS_H - cfg::ACTION_H) / cfg::ROW_H;
+
   input.begin();
   net.begin();
   g_dirty = true;
 }
 
+void maybe_enter_sleep();
+
 void loop() {
   input.update();
   net.update();
+  maybe_enter_sleep();
+
+  // Link indicator follows the TCP state (cleared on drop, set on reconnect).
+  if (g_status.link != net.connected()) {
+    g_status.link = net.connected();
+    g_dirty = true;
+  }
 
   // Drain network messages.
   JsonDocument doc;
@@ -374,22 +469,39 @@ void loop() {
   // Input: nav buttons for scrolling.
   if (g_screen == Screen::List) {
     if (input.wasPressed(InputManager::BTN_DOWN)) {
-      if (g_scroll + cfg::VISIBLE_ROWS < g_rowCount) { g_scroll++; g_dirty = true; }
+      if (g_scroll + g_visRows < g_rowCount) { g_scroll++; g_dirty = true; }
     }
     if (input.wasPressed(InputManager::BTN_UP)) {
       if (g_scroll > 0) { g_scroll--; g_dirty = true; }
     }
   }
 
-  // Touch taps.
+  // Touch taps: the SDK reports normalized coords in the panel-native
+  // landscape frame; undo the UI rotation to get logical coords.
   float nx, ny;
   if (input.wasTouchTap(nx, ny)) {
-    int x = (int)(nx * display.getDisplayWidth());
-    int y = (int)(ny * display.getDisplayHeight());
-    on_tap(x, y);
+    int lx = 0, ly = 0;
+    if (cfg::UI_ROTATION == 1) {           // portrait, panel 90 deg CW
+      lx = (int)((1.0f - ny) * (g_lw - 1));
+      ly = (int)(nx * (g_lh - 1));
+    } else if (cfg::UI_ROTATION == 2) {    // portrait, inverted
+      lx = (int)(ny * (g_lw - 1));
+      ly = (int)((1.0f - nx) * (g_lh - 1));
+    } else {
+      lx = (int)(nx * (g_lw - 1));
+      ly = (int)(ny * (g_lh - 1));
+    }
+    on_tap(lx, ly);
   }
 
-  // Debounced repaint.
+  // Debounced repaint (also redraws to clear an expired tap flash).
+  bool flashActive = g_flashUntil && (int32_t)(millis() - g_flashUntil) < 0;
+  static bool flashWasActive = false;
+  if (flashWasActive && !flashActive) {
+    g_flashUntil = 0;   // arm a fresh window on the next tap; no stale sentinel
+    g_dirty = true;
+  }
+  flashWasActive = flashActive;
   if (g_dirty && millis() - g_lastRefresh >= cfg::REDRAW_DEBOUNCE_MS) {
     g_lastRefresh = millis();
     g_dirty = false;

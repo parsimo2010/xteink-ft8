@@ -36,13 +36,15 @@ The workflow (CI only; it does not run on normal commits):
 
 ## Before the first release (validation checklist)
 
-- [ ] Firmware boots on a real X4 Pro; e-ink panel and touch confirmed.
+- [x] Firmware boots on a real X4 Pro; e-ink panel and touch confirmed
+      (2026-09-12 bring-up: portrait UI, GT911 tap feedback, page buttons, and
+      hold-power deep-sleep all verified on hardware).
 - [ ] X4 Pro joins the Pi AP and connects to the bridge.
 - [ ] CQ decodes appear; tapping a CQ completes a QSO with WSJT-X.
 - [ ] Headless Pi boot (power on → no keyboard/mouse/screen) brings up
       AP + WSJT-X + bridge.
 - [ ] `flash.sh` works from a fresh download on Linux and Windows.
-- [ ] `test_bridge.py` passes (CI runs it too).
+- [x] `test_bridge.py` passes (10/10; CI runs it too).
 
 ## Versioning
 
