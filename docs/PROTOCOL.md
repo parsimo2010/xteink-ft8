@@ -27,7 +27,7 @@ Each command is a JSON object with a `cmd` field.
 | `send_freetext`| `{"text":"...","send":<bool>}`                      | set free text / Tx5, optionally send |
 | `halt_tx`     | `{"auto_only":<bool>}`                                | stop TX (WSJT-X `HaltTx`) |
 | `clear`       | `{"window":<int>}`                                    | clear WSJT-X window (0=band,1=rx,2=both) |
-| `qsy`         | `{"band":"20m"}`  _or_ `{"freq_hz":<uint64>}`         | change band/frequency via rigctld (optional) |
+| `qsy`         | `{"band":"20m"}`  _or_ `{"freq_hz":<uint64>}`         | change band/frequency via rigctld (enabled by default; QMX/QMX+ auto-detected) |
 | `decodes_ack` | `{"seq":<int>}`                                       | acknowledge decodes up to seq (informational; CQ decodes are kept until TTL so `reply` still works) |
 | `ping`        | `{}`                                                 | liveness check -> `pong` |
 
@@ -105,8 +105,10 @@ Each command is a JSON object with a `cmd` field.
 
 The bridge sends `qsy` to Hamlib `rigctld` (default `localhost:4532`) using its
 text protocol: `F <freq_hz>;` (or `set_freq`). If `rigctld` is not reachable the
-bridge replies `not_supported` and logs. WSJT-X picks up the new frequency via
-its own rig polling. If the user prefers to set band manually, this command is
+bridge replies `not_supported` and logs. The standard Pi install runs
+`xteink-rigctld.service` (QRP Labs QMX/QMX+ auto-detected), and WSJT-X uses the
+same rigctld as "Hamlib NET rigctl", so it picks up the new frequency via its
+own rig polling. If the user prefers to set band manually, this command is
 simply unused.
 
 ## Failure semantics

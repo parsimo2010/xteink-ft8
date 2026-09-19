@@ -65,8 +65,41 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
 - **WSJT-X INI keys all live in the single `[Configuration]` group** (verified
   against WSJT-X source `Configuration.cpp write_settings()`): `MyCall`,
   `MyGrid`, `UDPServer`, `UDPServerPort`, `AcceptUDPRequests` (bool as
-  `true`/`false`). There is NO `[Network]` group. WSJT-X rewrites the INI on
-  exit, so `preseed_wsjtx.sh` refuses to run while wsjtx is running.
+  `true`/`false`), and the rig keys `Rig` (NAME string, e.g. "Hamlib NET
+  rigctl" — not a number), `CATNetworkPort` ("host:port"), `PTTMethod` (int:
+  0=VOX 1=CAT 2=DTR 3=RTS), `PTTport` ("CAT"), `DataMode` (int: 0=None 1=USB
+  2=Data). There is NO `[Network]` group. WSJT-X rewrites the INI on exit, so
+  `preseed_wsjtx.sh` refuses to run while wsjtx is running.
+- **Band change is ON BY DEFAULT for the QRP Labs QMX/QMX+** (the field rig).
+  `xteink-rigctld.service` runs `start_rigctld.sh`: auto-detects the QMX USB
+  serial port (`/dev/serial/by-id/*QRP*`, waits if unplugged), resolves the
+  hamlib model (QMX=2057 if available, else QCX/QDX 2052, else TS-480 2028 —
+  QMX CAT is a TS-480 subset), always passes `--serial-speed=115200` (the QMX
+  backend's 256000 default is rejected by termios). WSJT-X is preseeded to
+  "Hamlib NET rigctl" @ 127.0.0.1:4532 so ONE rigctld owns the radio for both
+  WSJT-X and the bridge (`--rig-host` now defaults to 127.0.0.1). Overrides in
+  `/etc/default/xteink-rigctld`. QMX facts: hamlib model 2057 exists only in
+  hamlib ≥ 4.6.1; Bookworm ships 4.5.4, Trixie ships 4.6.2 — that's why
+  `build_hamlib.sh` builds the LATEST hamlib release into `/opt/hamlib`
+  (private prefix, `start_rigctld.sh` prefers it; distro packages untouched).
+- **QMX audio is plug-and-play via the system default, not a device-name
+  guess.** WSJT-X stores audio as `SoundInName`/`SoundOutName` strings whose
+  exact spelling depends on the Qt audio backend (ALSA vs Pulse/PipeWire) and
+  the card id, so preseed does NOT write them: `setup_qmx_audio.sh` forces USB
+  audio to ALSA index 0 (`/etc/modprobe.d/xteink-qmx-audio.conf`: snd_usb_audio
+  index=0, snd_bcm2835 index=1) and pins `/etc/asound.conf` to the detected
+  QMX card id when attached. Headless WSJT-X (no Pulse session) then resolves
+  its "Default" device to the QMX; Configuration.cpp falls back to the default
+  device when the stored name matches nothing. `WSJTX_SNDIN`/`WSJTX_SNDOUT`
+  env vars pin explicit names if ever needed.
+- **WSJT-X flavor = wsjtx-improved (DG2YCB fork), always latest.**
+  `install_wsjtx.sh` scrapes the SourceForge files page for the newest
+  `WSJT-X_vX.Y.Z` folder (sort -uV), reads that folder's RSS, and installs the
+  plain `_improved_PLUS_..._Rpi_<codename>_<arch>.deb` (~60 MB; widescreen/AL
+  variants via WSJTX_VARIANT). Fallbacks: apt `wsjtx-improved` (Debian trixie+)
+  then apt `wsjtx`. Drop-in: same `/usr/bin/wsjtx`, same INI, same UDP schema
+  3 (v3.x only APPENDS fields, e.g. `itone` in Status — `wsjtx_udp.py`
+  `_parse_status` ignores trailing bytes, so the bridge is compatible).
 - **Raspberry Pi OS Bookworm+ uses NetworkManager, not dhcpcd.**
   `setup_ap.sh` detects this and creates an nmcli "shared" AP connection
   (`xteink-ap`, autoconnect yes, 192.168.4.1/24); it only falls back to

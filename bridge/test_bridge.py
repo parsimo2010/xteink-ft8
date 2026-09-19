@@ -133,6 +133,7 @@ def main():
         "--rx-port", str(RX_PORT),
         "--ctrl-port", str(CTRL_PORT),
         "--port", str(DEV_PORT),
+        "--rig-host", "",  # keep the qsy test deterministic even if a rigctld runs on 4532
     ])
     bridge = xteink_bridge.Bridge(args)
     bridge.server.start()

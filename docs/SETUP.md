@@ -22,8 +22,14 @@ access point, WSJT-X, and the bridge.
   firmware once.
 
 **Software (installed below)**
-* WSJT-X 2.6+ (headless via Xvfb — no screen needed in the field).
-* Hamlib (`rigctld`, package `libhamlib-utils`) for rig/band control.
+* **WSJT-X_improved** (the enhanced WSJT-X fork by DG2YCB) — `install.sh`
+  fetches the *latest* Raspberry Pi build from SourceForge and falls back to
+  the distro `wsjtx-improved`/`wsjtx` package. It is a drop-in replacement:
+  same `wsjtx` binary, same config file, same UDP protocol.
+* **Hamlib** — the latest release is built into a private prefix
+  (`/opt/hamlib`) so the native **QRP Labs QMX/QMX+** backend (rig model
+  2057) is available even on Bookworm (whose distro hamlib predates it).
+  The distro `libhamlib-utils` is kept as a fallback.
 * WiFi access point: **NetworkManager** (Bookworm default — no extra packages)
   or `hostapd` + `dnsmasq` + `dhcpcd` on older Raspberry Pi OS.
 * `xvfb` for the virtual display.
@@ -66,9 +72,18 @@ your call and grid:
 ```bash
 cd ~/xteink-ft8
 
-# 1) Install systemd units + dependencies (xvfb, hamlib/rigctld, wsjtx).
+# 1) Install systemd units + dependencies. This now also:
+#    - installs the LATEST wsjtx-improved Pi .deb (fallback: distro wsjtx),
+#    - builds the LATEST hamlib into /opt/hamlib (QMX backend, model 2057),
+#    - installs xteink-rigctld.service: rigctld auto-detects the QRP Labs
+#      QMX/QMX+ on USB and shares it between WSJT-X and the bridge, so the
+#      X4 Pro's << / >> band buttons work with NO extra setup,
+#    - makes the QMX USB sound card the system default audio device
+#      (setup_qmx_audio.sh), so WSJT-X works with Audio left on "Default",
+#    - adds the service user to the 'dialout' group (serial access).
 #    Derives the service user from SUDO_USER and the repo path from the
 #    script location, so plain `sudo bash ...` does the right thing.
+#    (Offline or in a hurry? SKIP_HAMLIB_BUILD=1 and/or SKIP_WSJTX_INSTALL=1.)
 sudo bash bridge/scripts/install.sh
 
 # 2) Configure the WiFi access point (SSID XTEINK-FT8 / pass ft8field,
@@ -77,14 +92,17 @@ sudo bash bridge/scripts/install.sh
 #    auto-connects at boot; on older OS it falls back to hostapd+dnsmasq.
 sudo bash bridge/scripts/setup_ap.sh
 
-# 3) Best-effort prefill of your callsign/grid + UDP ports into WSJT-X.
+# 3) Best-effort prefill of your callsign/grid + UDP ports + rig (Hamlib NET
+#    rigctl -> 127.0.0.1:4532, PTT=CAT, mode USB) into WSJT-X.
 #    Run as the desktop user (NOT sudo) with WSJT-X CLOSED (it rewrites its
 #    INI on exit and would undo the changes).
 WSJTXCALL=W9XYZ WSJTXGRID=EM48 bash bridge/scripts/preseed_wsjtx.sh
 ```
 
-If `apt` can't find `wsjtx`, install it from the WSJT-X release page
-(`.deb`/`.rpm`), then re-run `install.sh` (or just start the services).
+If both automatic WSJT-X installs fail (no internet during setup), install a
+`.deb` from the [wsjtx-improved files page](https://sourceforge.net/projects/wsjt-x-improved/files/)
+(or the plain WSJT-X release page), then re-run `install.sh` (or just start
+the services).
 
 > **Note:** bringing up the AP disconnects the Pi from any home WiFi on the
 > same adapter. Do the one-time install while on Ethernet (or before step 2),
@@ -127,31 +145,44 @@ Then in **Settings → Reporting** set:
 Also in WSJT-X settings:
 * **Station Callsign** and **Grid** — this is the single source of truth for
   your identity (the bridge and the X4 Pro pull it from here).
-* **Rig** (Hamlib) → select your radio and audio device so WSJT-X can transmit.
+* **Rig** — `preseed_wsjtx.sh` already sets this to **Hamlib NET rigctl**
+  pointing at `127.0.0.1:4532`; just press **Test CAT** (should turn green
+  once the QMX is plugged in and `xteink-rigctld` is running).
+* **Audio** — leave input/output on **Default**: `install.sh` already made the
+  QMX's USB sound card the Pi's default audio device (USB audio forced to
+  ALSA card 0 + `/etc/asound.conf` pin). If you prefer explicit names, select
+  the QMX entries here — or preseed them with
+  `WSJTX_SNDIN="<exact input name>" WSJTX_SNDOUT="<exact output name>"`.
+  Plug the QMX in and re-run `sudo bash bridge/scripts/setup_qmx_audio.sh`
+  after hot-plugging into a different port/OS reinstall.
 * **Auto Seq** — enable for hands-free completion of FT8 QSOs.
 * **Include non-default decode messages**: keep default (off); the bridge only
   cares about CQ/QRZ.
 
-> **Optional band change:** to let the X4 Pro's `<<`/`>>` buttons change band,
-> run WSJT-X and the bridge against the **same** `rigctld`:
-> ```bash
-> rigctld --model=<MODEL> --rig-file=/dev/ttyUSB0 --set-conf=... &
-> ```
-> and start the bridge with `--rig-host 127.0.0.1 --rig-port 4532`. Because
-> both WSJT-X and the bridge talk to that one rigctld, band changes propagate.
-> Without it, the `<<`/`>>` buttons reply `not_supported` (harmless).
+> **Band change works by default** with the QRP Labs **QMX/QMX+**:
+> `xteink-rigctld.service` runs one `rigctld` that owns the radio's USB serial
+> port, and *both* WSJT-X (as "Hamlib NET rigctl") and the bridge talk to it
+> on `127.0.0.1:4532`. The X4 Pro's `<<`/`>>` buttons therefore retune the
+> radio *and* the WSJT-X session — no extra steps. The rig is auto-detected
+> (QMX backend 2057 on hamlib ≥ 4.6.1 — `install.sh` builds the latest hamlib
+> into `/opt/hamlib` for exactly this; older hamlib falls back to the
+> TS-480-compatible backend, which the QMX's CAT protocol also satisfies).
+> A different radio? Edit `/etc/default/xteink-rigctld`
+> (`RIG_MODEL`/`RIG_FILE`) and `sudo systemctl restart xteink-rigctld`.
+> With no radio attached the buttons simply report `not_supported` (harmless).
 
 ---
 
 ## 5. Start the services & verify
 
 ```bash
-sudo systemctl enable xteink-bridge.service xteink-wsjtx.service
-sudo systemctl start  xteink-bridge.service xteink-wsjtx.service
+sudo systemctl enable xteink-bridge.service xteink-wsjtx.service xteink-rigctld.service
+sudo systemctl start  xteink-bridge.service xteink-wsjtx.service xteink-rigctld.service
 
 # Watch startup / errors:
 sudo journalctl -u xteink-bridge -f
 sudo journalctl -u xteink-wsjtx -f
+sudo journalctl -u xteink-rigctld -f
 ```
 
 The bridge logs `bridge ready: rx=127.0.0.1:2238 ... device=0.0.0.0:4510`.
@@ -176,7 +207,9 @@ The bridge logs `bridge ready: rx=127.0.0.1:2238 ... device=0.0.0.0:4510`.
 | AP not up after reboot | Bookworm: `sudo nmcli con up xteink-ap` and check `nmcli -f NAME,AUTOCONNECT con show`. Legacy: `systemctl status hostapd dnsmasq dhcpcd`. |
 | **No decodes** on the X4 Pro | WSJT-X UDP Server port must match the bridge `--rx-port` (default **2238**). |
 | **Tap does nothing** | WSJT-X "Accept UDP requests" must be checked; controls port **2237** reachable from the bridge. |
-| **Band change no-ops** | Ensure `rigctld` is running and the bridge was started with `--rig-host/--rig-port`. |
+| **Band change no-ops** | `systemctl status xteink-rigctld`; QMX plugged in (`ls /dev/serial/by-id/` shows a `QRP_Labs` entry)? Service user in `dialout`? Try `sudo journalctl -u xteink-rigctld -e`. Override in `/etc/default/xteink-rigctld`. |
+| **No audio / TX silent** | QMX is the default card? `aplay -L \| head`, `aplay -l` (QMX should be card 0). Re-run `sudo bash bridge/scripts/setup_qmx_audio.sh` with the QMX plugged in, reboot, and check WSJT-X Settings → Audio (Default or the QMX entry). |
+| WSJT-X "Test CAT" red | `xteink-rigctld` running and Rig set to *Hamlib NET rigctl* @ `127.0.0.1:4532` (re-run `preseed_wsjtx.sh` with WSJT-X stopped)? |
 | Bridge won't start | `sudo journalctl -u xteink-bridge -e` for the traceback. |
 | WSJT-X not on the virtual display | `systemctl status xteink-wsjtx`; confirm `xvfb` installed and `DISPLAY=:1` is free. |
 
@@ -190,5 +223,6 @@ For testing without the service units:
 cd ~/xteink-ft8/bridge
 python3 xteink_bridge.py --help
 python3 xteink_bridge.py
-# defaults: rx 127.0.0.1:2238, controls to 127.0.0.1:2237, device on 0.0.0.0:4510
+# defaults: rx 127.0.0.1:2238, controls to 127.0.0.1:2237, device on 0.0.0.0:4510,
+#           rigctld on 127.0.0.1:4532 (--rig-host "" disables band control)
 ```

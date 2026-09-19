@@ -280,7 +280,7 @@ def parse_args(argv=None):
     p.add_argument("--ctrl-port", type=int, default=2237, help="WSJT-X control listen port (default 2237)")
     p.add_argument("--listen", default="0.0.0.0", help="device server bind address (default 0.0.0.0)")
     p.add_argument("--port", type=int, default=4510, help="device server port (default 4510)")
-    p.add_argument("--rig-host", default=None, help="optional rigctld host for band changes")
+    p.add_argument("--rig-host", default="127.0.0.1", help="rigctld host for band changes (default 127.0.0.1; empty string disables)")
     p.add_argument("--rig-port", type=int, default=4532, help="rigctld port (default 4532)")
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     return p.parse_args(argv)

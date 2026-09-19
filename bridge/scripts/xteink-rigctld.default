@@ -1,0 +1,8 @@
+# rigctld settings for xteink-ft8 (sourced by start_rigctld.sh).
+# The defaults target a QRP Labs QMX/QMX+ on USB and need no edits.
+# See bridge/scripts/start_rigctld.sh for details.
+RIG_MODEL=auto     # auto = QMX (2057) if available, else QCX/QDX, else TS-480
+RIG_FILE=auto      # auto = first QRP Labs USB serial port (waits if unplugged)
+RIG_PORT=4532
+RIG_SPEED=115200
+#RIGCTLD_BIN=/opt/hamlib/bin/rigctld

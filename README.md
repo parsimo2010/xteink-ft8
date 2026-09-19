@@ -50,7 +50,7 @@ xteink-ft8/
 │   ├── wsjtx_udp.py       WSJT-X UDP protocol encode/decode (pure struct)
 │   ├── device_server.py   TCP server the X4 Pro connects to
 │   ├── qso_tracker.py     CQ decode tracking + QSO state
-│   ├── rigctl.py          band change via Hamlib rigctld (optional)
+│   ├── rigctl.py          band change via Hamlib rigctld (QMX/QMX+ by default)
 │   └── scripts/           systemd autostart, AP setup, WSJT-X preseed
 ├── firmware/          Xteink X4 Pro firmware (PlatformIO + FreeInk SDK)
 │   ├── platformio.ini
@@ -75,7 +75,10 @@ xteink-ft8/
   status to it in real time.
 * Acts on device commands by sending WSJT-X **Incoming** control messages
   (Reply, FreeText, HaltTx, Clear) back to WSJT-X's "Accept UDP requests" port.
-* Changes band via Hamlib `rigctld` (optional; falls back to a log message).
+* Changes band via Hamlib `rigctld` — enabled by default: `install.sh` sets up
+  `xteink-rigctld.service`, which auto-detects a QRP Labs **QMX/QMX+** on USB
+  and is shared with WSJT-X (Hamlib NET rigctl), so the X4 Pro's band buttons
+  retune the whole station. Degrades to a `not_supported` reply if no rigctld.
 
 Pure Python 3 stdlib — no third-party dependencies to install on the Pi.
 
@@ -116,7 +119,8 @@ then display the progress:
 4. The bridge forwards `Status` messages (current `tx_message`) and related
    decodes so the X4 Pro shows the QSO progressing.
 5. A `CQ` button sends `send_cq` (WSJT-X `FreeText` with `CQ <you> <grid>`,
-   send=1). `Band << >>` changes band via rigctld. `Halt` stops TX.
+   send=1). `Band << >>` changes band via the shared rigctld (QMX/QMX+
+   auto-detected). `Halt` stops TX.
 
 So the device controls *which* station to work and *when* to transmit, while
 WSJT-X does the FT8 protocol heavy lifting.

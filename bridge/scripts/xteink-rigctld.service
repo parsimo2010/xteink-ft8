@@ -1,0 +1,19 @@
+# xteink-ft8 rigctld — Hamlib rig daemon shared by WSJT-X (NET rigctl) and the
+# bridge, so the X4 Pro band buttons work. Installed by scripts/install.sh.
+[Unit]
+Description=Hamlib rigctld for xteink-ft8 (QRP Labs QMX/QMX+ band control)
+Wants=network.target
+After=network.target
+Before=xteink-wsjtx.service xteink-bridge.service
+
+[Service]
+Type=simple
+ExecStart=%h/xteink-ft8/bridge/scripts/start_rigctld.sh
+Restart=always
+RestartSec=5
+User=pi
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

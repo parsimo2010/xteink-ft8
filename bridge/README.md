@@ -22,7 +22,7 @@ Defaults:
 | `wsjtx_udp.py` | WSJT-X UDP protocol encode/decode (pure struct) |
 | `qso_tracker.py` | CQ decode tracking + WSJT-X message classification |
 | `device_server.py` | length-framed JSON TCP server for the X4 Pro |
-| `rigctl.py` | optional band change via Hamlib `rigctld` |
+| `rigctl.py` | band change via Hamlib `rigctld` (on by default) |
 | `xteink_bridge.py` | entry point tying it together |
 
 ## Test
@@ -37,9 +37,14 @@ WSJT-X `Reply` packet.
 
 ## Band change
 
-Band changes need Hamlib `rigctld` running (independent of WSJT-X's own rig
-link). Start `rigctld` and pass `--rig-host/--rig-port`. Without it the `qsy`
-device command replies `not_supported`.
+Band changes go to Hamlib `rigctld` on `127.0.0.1:4532` (bridge default).
+`install.sh` sets up `xteink-rigctld.service`, which auto-detects a QRP Labs
+**QMX/QMX+** on USB (hamlib ≥ 4.6.1 uses the native QMX backend, model 2057 —
+`build_hamlib.sh` installs the latest hamlib into `/opt/hamlib` for Bookworm;
+older hamlib falls back to the TS-480-compatible backend). WSJT-X connects to
+the same rigctld as "Hamlib NET rigctl", so band changes propagate to the
+WSJT-X session. Configure other rigs in `/etc/default/xteink-rigctld`.
+Without any rigctld the `qsy` device command replies `not_supported`.
 
 See **`../docs/SETUP.md`** for full field deployment (including headless
 auto-start via systemd) and **`../docs/FLASHING.md`** for the X4 Pro. The
