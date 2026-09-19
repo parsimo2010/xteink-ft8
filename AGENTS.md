@@ -17,7 +17,7 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   ever shown NO-LINK), a completed real FT8 QSO, headless Pi boot,
   `flash.sh` from a release zip. Do NOT tag a release until the checklist in
   docs/RELEASE.md is green.
-- Bridge: implemented + passing (10/10; Python, stdlib only).
+- Bridge: implemented + passing (14/14; Python, stdlib only).
 - Firmware: compiles clean; built current `firmware.bin` ~997 KB.
 - Docs are complete for operators (SETUP / FLASHING / PROTOCOL / RELEASE).
 
@@ -62,10 +62,26 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   a corrupt/oversized frame cannot permanently desync the stream; a tap on the
   status bar does nothing. Bridge caps `hello`/`get_decodes` snapshots to <16 KB
   (the MAX_FRAME both ends use).
+- **WSJT-X INI keys all live in the single `[Configuration]` group** (verified
+  against WSJT-X source `Configuration.cpp write_settings()`): `MyCall`,
+  `MyGrid`, `UDPServer`, `UDPServerPort`, `AcceptUDPRequests` (bool as
+  `true`/`false`). There is NO `[Network]` group. WSJT-X rewrites the INI on
+  exit, so `preseed_wsjtx.sh` refuses to run while wsjtx is running.
+- **Raspberry Pi OS Bookworm+ uses NetworkManager, not dhcpcd.**
+  `setup_ap.sh` detects this and creates an nmcli "shared" AP connection
+  (`xteink-ap`, autoconnect yes, 192.168.4.1/24); it only falls back to
+  hostapd+dnsmasq+dhcpcd on older OS. NM shared mode provides DHCP itself.
+- **`install.sh` resolves paths from the script location + `SUDO_USER`** (under
+  sudo, `$HOME` is `/root` — never use it for the service user's paths).
+- **`decodes_ack` never GCs CQ decodes** (a later `reply` needs them by id);
+  `QSOLogged` QDateTime fields are variable-length (13 bytes unless
+  timespec==2) and parsed accordingly. Status pushes include a `band` field
+  derived from the dial frequency; the firmware band buttons walk a ladder
+  (160m..6m) matching `rigctl.BAND_CENTERS`.
 
 ## Build & test commands
 
-- Bridge tests: `cd bridge && python test_bridge.py` (expect 10/10 pass).
+- Bridge tests: `cd bridge && python test_bridge.py` (expect 14/14 pass).
 - Firmware build: `cd firmware && py -3.12 -m platformio run -e x4pro`
 - Firmware flash: `py -3.12 -m platformio run -e x4pro -t upload`
 - **PlatformIO is installed under Python 3.12 only** (`py -3.12 -m platformio`).

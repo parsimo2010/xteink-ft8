@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # Best-effort preseed of WSJT-X settings so field boots need no manual config.
 #
-# WSJT-X writes its config to ~/.config/WSJT-X/WSJT-X.ini (older) or
-# ~/.config/wsjt-x/wsjt-x.ini (newer). The INI key names have shifted across
-# releases, so this sets the common spellings and reports what it touched.
-# Run it once at home (optionally over VNC). A one-time visual check is still
-# recommended: WSJT-X >= 2.6 moved some settings into new groups.
+# WSJT-X stores everything in ONE INI group, [Configuration], in
+# ~/.config/WSJT-X/WSJT-X.ini (verified against WSJT-X source,
+# Configuration.cpp write_settings()). The keys this script sets:
+#   MyCall, MyGrid, UDPServer, UDPServerPort, AcceptUDPRequests
+# Booleans are written the way QSettings writes them ("true"/"false").
+#
+# IMPORTANT: WSJT-X rewrites its INI on exit, so it must NOT be running while
+# this script edits the file. Run it as the desktop user (NOT sudo).
+# A one-time visual check over VNC is still recommended (rig/audio device
+# selection cannot be preseeded reliably).
 #
 # Required env / args:
 #   WSJTXCALL  your callsign
@@ -21,13 +26,25 @@ UDPSERVER="${UDPSERVER:-127.0.0.1}"
 UDPPORT="${UDPPORT:-2238}"
 CTRLPORT="${CTRLPORT:-2237}"
 
+if [ "$(id -u)" -eq 0 ]; then
+  echo "do NOT run with sudo - WSJT-X config lives in the desktop user's home." >&2
+  exit 1
+fi
+
+if pgrep -x wsjtx >/dev/null 2>&1; then
+  echo "WSJT-X is running. Close it first (it overwrites its INI on exit):" >&2
+  echo "  sudo systemctl stop xteink-wsjtx   # or close the window" >&2
+  exit 1
+fi
+
 # Locate the config file.
-for p in "$HOME/.config/wsjt-x/wsjt-x.ini" "$HOME/.config/WSJT-X/WSJT-X.ini"; do
+INI=""
+for p in "$HOME/.config/WSJT-X/WSJT-X.ini" "$HOME/.config/wsjt-x/wsjt-x.ini"; do
   [ -f "$p" ] && INI="$p" && break
 done
-if [ -z "${INI:-}" ]; then
+if [ -z "$INI" ]; then
   echo "WSJT-X config not found. Launch WSJT-X once (over VNC) so it creates"
-  echo "its config, then re-run this script."
+  echo "its config, close it, then re-run this script."
   exit 1
 fi
 echo "Found WSJT-X config: $INI"
@@ -49,12 +66,9 @@ set_key() {
 
 set_key Configuration MyCall "$WSJTXCALL"
 set_key Configuration MyGrid "$WSJTXGRID"
-set_key Network udpServerPort "$UDPPORT"
-set_key Network udpServer "$UDPSERVER"
-set_key Network acceptUDPRequests "1"
-# Alternate spellings seen across versions:
-set_key Network UDP_Server_Port "$UDPPORT"
-set_key Network Accept_UDP_Requests "1"
+set_key Configuration UDPServer "$UDPSERVER"
+set_key Configuration UDPServerPort "$UDPPORT"
+set_key Configuration AcceptUDPRequests "true"
 
 echo "Preseeded callsign=$WSJTXCALL grid=$WSJTXGRID udp=${UDPSERVER}:${UDPPORT} ctrl=${CTRLPORT}"
 echo "NOTE: verify in WSJT-X (Settings -> Reporting) that 'UDP Server' is"

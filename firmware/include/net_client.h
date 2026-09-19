@@ -40,11 +40,4 @@ class NetClient {
   void enqueue_rx(const String& s);
   bool enqueue_tx(const String& s);
   bool dequeue_tx(String& out);
-
-  // Reading state for a partial frame.
-  uint8_t _hdr[4];
-  size_t _hdr_got = 0;
-  uint32_t _frame_len = 0;
-  String _frame_buf;
-  uint32_t _read_start = 0;
 };

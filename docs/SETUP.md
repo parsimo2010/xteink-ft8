@@ -23,8 +23,9 @@ access point, WSJT-X, and the bridge.
 
 **Software (installed below)**
 * WSJT-X 2.6+ (headless via Xvfb — no screen needed in the field).
-* Hamlib (`rigctld`) for rig/band control.
-* `hostapd` + `dnsmasq` for the WiFi access point.
+* Hamlib (`rigctld`, package `libhamlib-utils`) for rig/band control.
+* WiFi access point: **NetworkManager** (Bookworm default — no extra packages)
+  or `hostapd` + `dnsmasq` + `dhcpcd` on older Raspberry Pi OS.
 * `xvfb` for the virtual display.
 * The xteink-ft8 bridge (pure Python 3, no extra pip packages).
 
@@ -65,35 +66,52 @@ your call and grid:
 ```bash
 cd ~/xteink-ft8
 
-# 1) Install systemd units + dependencies (xvfb, wsjtx, hamlib).
+# 1) Install systemd units + dependencies (xvfb, hamlib/rigctld, wsjtx).
+#    Derives the service user from SUDO_USER and the repo path from the
+#    script location, so plain `sudo bash ...` does the right thing.
 sudo bash bridge/scripts/install.sh
 
 # 2) Configure the WiFi access point (SSID XTEINK-FT8 / pass ft8field,
 #    network 192.168.4.1/24). Optionally override with AP_SSID/AP_PASS.
+#    On Bookworm+ this creates a NetworkManager "shared" hotspot that
+#    auto-connects at boot; on older OS it falls back to hostapd+dnsmasq.
 sudo bash bridge/scripts/setup_ap.sh
 
 # 3) Best-effort prefill of your callsign/grid + UDP ports into WSJT-X.
+#    Run as the desktop user (NOT sudo) with WSJT-X CLOSED (it rewrites its
+#    INI on exit and would undo the changes).
 WSJTXCALL=W9XYZ WSJTXGRID=EM48 bash bridge/scripts/preseed_wsjtx.sh
 ```
 
 If `apt` can't find `wsjtx`, install it from the WSJT-X release page
 (`.deb`/`.rpm`), then re-run `install.sh` (or just start the services).
 
+> **Note:** bringing up the AP disconnects the Pi from any home WiFi on the
+> same adapter. Do the one-time install while on Ethernet (or before step 2),
+> and use Ethernet or the AP itself for later SSH sessions.
+
 ---
 
 ## 4. Configure WSJT-X (one-time, over VNC)
 
-The Pi runs WSJT-X on a virtual display, so to see its window you connect over
-VNC **once at home**:
+The Pi runs WSJT-X on a virtual display (`:1`), so to see its window you
+attach a VNC server to that display **once at home**:
 
 ```bash
 # If x11vnc isn't installed yet:
 sudo apt install -y x11vnc
-# Start WSJT-X on the virtual display and view it:
-export DISPLAY=:1
+
+# Start WSJT-X on the virtual display via its service, then attach VNC to it:
+sudo systemctl start xteink-wsjtx.service
 x11vnc -display :1 &
-wsjtx        # or: systemctl start xteink-wsjtx.service
+# -> VNC to the Pi's IP, display :0 port 5900. Over SSH use a tunnel:
+#    ssh -L 5900:localhost:5900 pi@xteink
 ```
+
+> Don't launch a second `wsjtx` by hand while the service is running — one
+> instance owns the config and the audio device. Edit WSJT-X settings in this
+> VNC session, or stop the service first
+> (`sudo systemctl stop xteink-wsjtx`) before running `preseed_wsjtx.sh`.
 
 Then in **Settings → Reporting** set:
 * **UDP Server**: `127.0.0.1` port **2238**  ← where WSJT-X *sends* messages
@@ -154,7 +172,8 @@ The bridge logs `bridge ready: rx=127.0.0.1:2238 ... device=0.0.0.0:4510`.
 
 | Symptom | Fix |
 |---------|-----|
-| Device shows **No link** | AP up? (`iw dev` / `hostapd` running). Credentials in `config.h` match `setup_ap.sh`? Bridge listening on an address the device can reach? |
+| Device shows **No link** | AP up? (Bookworm: `nmcli con show xteink-ap`; legacy: `iw dev` / `hostapd` running). Credentials in `config.h` match `setup_ap.sh`? Bridge listening on an address the device can reach? |
+| AP not up after reboot | Bookworm: `sudo nmcli con up xteink-ap` and check `nmcli -f NAME,AUTOCONNECT con show`. Legacy: `systemctl status hostapd dnsmasq dhcpcd`. |
 | **No decodes** on the X4 Pro | WSJT-X UDP Server port must match the bridge `--rx-port` (default **2238**). |
 | **Tap does nothing** | WSJT-X "Accept UDP requests" must be checked; controls port **2237** reachable from the bridge. |
 | **Band change no-ops** | Ensure `rigctld` is running and the bridge was started with `--rig-host/--rig-port`. |

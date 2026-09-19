@@ -28,14 +28,14 @@ Each command is a JSON object with a `cmd` field.
 | `halt_tx`     | `{"auto_only":<bool>}`                                | stop TX (WSJT-X `HaltTx`) |
 | `clear`       | `{"window":<int>}`                                    | clear WSJT-X window (0=band,1=rx,2=both) |
 | `qsy`         | `{"band":"20m"}`  _or_ `{"freq_hz":<uint64>}`         | change band/frequency via rigctld (optional) |
-| `decodes_ack` | `{"seq":<int>}`                                       | acknowledge decodes up to seq (bridge may GC) |
+| `decodes_ack` | `{"seq":<int>}`                                       | acknowledge decodes up to seq (informational; CQ decodes are kept until TTL so `reply` still works) |
 | `ping`        | `{}`                                                 | liveness check -> `pong` |
 
 ## Bridge -> Device (push / responses)
 
 | type          | payload fields  | meaning |
 |---------------|-----------------|---------|
-| `hello`       | `{"ok":true,"version":1,"my_call":"..","my_grid":"..","mode":"FT8","band":"20m"}` | handshake reply |
+| `hello`       | `{"ok":true,"version":1,"my_call":"..","my_grid":"..","mode":"FT8","band":"20m","status":{...},"decodes":{"seq":N,"decodes":[...]}}` | handshake reply (carries the full current status + CQ snapshot) |
 | `status`      | `{...}`         | WSJT-X status snapshot (see below) |
 | `decode`      | `{...}`         | a new CQ decode (see below) |
 | `decodes`     | `{"seq":N,"decodes":[...]}` | full list snapshot (on `get_decodes` / after `hello`) |
@@ -53,7 +53,8 @@ Each command is a JSON object with a `cmd` field.
 ```json
 {
   "type": "status",
-  "dial_freq": 14074000,
+  "band": "20m",
+  "dial_frequency": 14074000,
   "mode": "FT8",
   "dx_call": "K1ABC",
   "report": "-12",
@@ -72,7 +73,8 @@ Each command is a JSON object with a `cmd` field.
 ```
 
 > `tx_message` is the current outgoing message — this is what the device shows
-> to visualize QSO progress.
+> to visualize QSO progress. `band` is derived by the bridge from
+> `dial_frequency` (empty string when unknown).
 
 ### decode object
 

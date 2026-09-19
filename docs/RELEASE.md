@@ -44,7 +44,7 @@ The workflow (CI only; it does not run on normal commits):
 - [ ] Headless Pi boot (power on → no keyboard/mouse/screen) brings up
       AP + WSJT-X + bridge.
 - [ ] `flash.sh` works from a fresh download on Linux and Windows.
-- [x] `test_bridge.py` passes (10/10; CI runs it too).
+- [x] `test_bridge.py` passes (14/14; CI runs it too).
 
 ## Versioning
 

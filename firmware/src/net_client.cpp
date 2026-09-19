@@ -72,9 +72,6 @@ void NetClient::connect_tcp() {
     return;
   }
   _connected = true;
-  _hdr_got = 0;
-  _frame_len = 0;
-  _frame_buf = "";
   // Announce to the bridge.
   JsonDocument doc;
   set_cmd(doc, "hello");

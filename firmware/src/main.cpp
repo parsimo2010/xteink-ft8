@@ -67,6 +67,7 @@ char g_detailGrid[5] = "";
 
 bool g_dirty = true;
 uint32_t g_lastRefresh = 0;
+bool g_qsoLogged = false;         // set on qso_logged, shown on the detail screen
 
 // --- Tap visual feedback: one control drawn inverted for a moment ------------
 uint32_t g_flashUntil = 0;
@@ -162,6 +163,23 @@ void handle_msg(const JsonDocument& doc) {
     strlcpy(g_status.mode, doc["mode"] | "FT8", sizeof(g_status.mode));
     strlcpy(g_status.txMessage, doc["tx_message"] | "", sizeof(g_status.txMessage));
     g_status.transmitting = doc["transmitting"] | false;
+    const char* b = doc["band"] | "";
+    if (b[0]) strlcpy(g_status.band, b, sizeof(g_status.band));
+    g_dirty = true;
+  } else if (strcmp(type, "qso_logged") == 0) {
+    // Drop the worked station from the list and flag the detail screen.
+    const char* dx = doc["dx_call"] | "";
+    if (dx[0]) {
+      for (int i = 0; i < g_rowCount; i++) {
+        if (strcmp(g_rows[i].call, dx) == 0) {
+          for (int j = i; j < g_rowCount - 1; j++) g_rows[j] = g_rows[j + 1];
+          g_rowCount--;
+          if (g_scroll > 0 && g_scroll + g_visRows > g_rowCount) g_scroll--;
+          break;
+        }
+      }
+    }
+    g_qsoLogged = true;
     g_dirty = true;
   } else if (strcmp(type, "hello") == 0) {
     g_status.link = doc["ok"] | false;
@@ -197,6 +215,7 @@ void send_reply(const Decode& d) {
   set_cmd(cmd, "reply");
   cmd["decode_id"] = (uint32_t)d.id;
   net.send(std::move(cmd));
+  g_qsoLogged = false;
 }
 
 void send_cq() {
@@ -219,14 +238,31 @@ void send_halt() {
   net.send(std::move(cmd));
 }
 
+// Band ladder for the << / >> buttons (must match rigctl.BAND_CENTERS on the
+// bridge, which maps these names to frequencies).
+static const char* const BAND_LADDER[] = {
+    "160m", "80m", "60m", "40m", "30m", "20m",
+    "17m", "15m", "12m", "10m", "6m",
+};
+static constexpr int BAND_LADDER_N = sizeof(BAND_LADDER) / sizeof(BAND_LADDER[0]);
+
 void send_cmd_qsy(int dir) {
   JsonDocument cmd;
   set_cmd(cmd, "qsy");
-  // dir: -1 = down a band, +1 = up a band. The bridge maps band names to
-  // frequencies; we send the currently shown band hint for a centered move.
-  // For simplicity the first prototype sends a fixed band step via freq_hz.
-  // (A more complete implementation tracks a band ladder.)
-  cmd["band"] = g_status.band;
+  int idx = -1;
+  for (int i = 0; i < BAND_LADDER_N; i++) {
+    if (strcmp(g_status.band, BAND_LADDER[i]) == 0) { idx = i; break; }
+  }
+  if (idx < 0) {
+    // No/unknown band yet (e.g. no hello received): start at 20m, the usual
+    // FT8 watering hole, regardless of direction.
+    cmd["band"] = "20m";
+  } else {
+    int n = idx + dir;
+    if (n < 0) n = 0;
+    if (n >= BAND_LADDER_N) n = BAND_LADDER_N - 1;
+    cmd["band"] = BAND_LADDER[n];
+  }
   net.send(std::move(cmd));
   g_dirty = true;
 }
@@ -378,6 +414,10 @@ void render_detail() {
 
   snprintf(line, sizeof(line), "View: %s %s %s", g_status.band, g_status.mode, g_status.transmitting ? "TX" : "RX");
   ui.text(x, cfg::UI_MARGIN + 80, line, true);
+
+  if (g_qsoLogged) {
+    ui.text(x, cfg::UI_MARGIN + 108, "QSO LOGGED", true);
+  }
 
   int y = actionBarTop();
   int bw = contentW() / 2;

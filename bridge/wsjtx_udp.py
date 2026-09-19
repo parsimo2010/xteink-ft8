@@ -208,9 +208,24 @@ def _parse_reply(buf, off):
     return d
 
 
+def _unpack_qdatetime(buf, off):
+    """QDateTime per QDataStream Qt_5_4 (see NetworkMessage.hpp):
+    qint64 julian day + quint32 ms + quint8 timespec [+ qint32 offset only
+    when timespec==2]. WSJT-X never uses timespec==3 (time zone)."""
+    jd, msecs, timespec = struct.unpack_from(">qLB", buf, off)
+    off += 13
+    offset = None
+    if timespec == 2:  # OffsetFromUTC
+        (offset,) = struct.unpack_from(">l", buf, off)
+        off += 4
+    elif timespec == 3:  # TimeZone - not produced by WSJT-X
+        raise ProtocolError("QDateTime with time zone not supported")
+    return {"julian_day": jd, "msecs": msecs, "timespec": timespec, "utc_offset": offset}, off
+
+
 def _parse_qso_logged(buf, off):
     d = {}
-    off += 17  # QDateTime: qint64 JD + quint32 ms + quint8 spec [+ qint32 o32]
+    d["time_off"], off = _unpack_qdatetime(buf, off)
     d["dx_call"], off = _unpack_string(buf, off)
     d["dx_grid"], off = _unpack_string(buf, off)
     (d["tx_freq"],) = struct.unpack_from(">Q", buf, off)
@@ -221,13 +236,15 @@ def _parse_qso_logged(buf, off):
     d["tx_power"], off = _unpack_string(buf, off)
     d["comments"], off = _unpack_string(buf, off)
     d["name"], off = _unpack_string(buf, off)
-    off += 17  # on QDateTime
+    d["time_on"], off = _unpack_qdatetime(buf, off)
     d["op_call"], off = _unpack_string(buf, off)
     d["my_call"], off = _unpack_string(buf, off)
     d["my_grid"], off = _unpack_string(buf, off)
     d["exchange_sent"], off = _unpack_string(buf, off)
     d["exchange_received"], off = _unpack_string(buf, off)
     d["adif_propagation_mode"], off = _unpack_string(buf, off)
+    # Newer WSJT-X appends satellite/satmode/freq_rx fields; per the protocol's
+    # backward-compatibility rule, trailing fields we don't know are ignored.
     return d
 
 

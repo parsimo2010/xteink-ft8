@@ -71,10 +71,10 @@ class DeviceServer:
                 try:
                     obj = json.loads(payload.decode("utf-8"))
                 except (ValueError, UnicodeDecodeError):
-                    self._send(conn, {"error": {"message": "invalid json"}})
+                    self._send(conn, {"type": "error", "message": "invalid json"})
                     continue
                 if not isinstance(obj, dict):
-                    self._send(conn, {"error": {"message": "expected object"}})
+                    self._send(conn, {"type": "error", "message": "expected object"})
                     continue
                 resp = self.handler(obj) if self.handler else None
                 if resp is not None:

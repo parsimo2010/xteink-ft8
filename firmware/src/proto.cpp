@@ -1,8 +1,6 @@
 #include "proto.h"
 #include <WiFi.h>
 
-static constexpr uint32_t FRAME_TIMEOUT_MS = 5000;
-
 bool send_frame(WiFiClient& client, const JsonDocument& doc) {
   size_t n = measureJson(doc);
   if (n == 0 || n > MAX_FRAME) return false;
@@ -24,8 +22,8 @@ int read_frame(WiFiClient& client, JsonDocument& doc, uint32_t timeout_ms) {
     if (client.available()) {
       hdr[got++] = (uint8_t)client.read();
       start = millis();  // reset on any byte
-    } else if (millis() - start > FRAME_TIMEOUT_MS) {
-      return -1;
+    } else if (millis() - start > timeout_ms) {
+      return (got == 0) ? 0 : -1;
     } else {
       delay(1);
     }

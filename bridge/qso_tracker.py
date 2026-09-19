@@ -125,8 +125,12 @@ class QsoTracker:
         return {"seq": self._next_id, "decodes": entries}
 
     def ack(self, seq):
-        """Drop decodes with id <= seq (the device has them)."""
+        """Device acknowledged decodes up to seq.
+
+        Only non-CQ rows may be garbage-collected: CQ decodes must survive an
+        ack because the device answers them *later* by id (`reply`).
+        """
         if seq is None:
             return
-        self._decodes = [d for d in self._decodes if d.id > seq]
+        self._decodes = [d for d in self._decodes if d.id > seq or d.is_cq]
         self._by_id = {d.id: d for d in self._decodes}

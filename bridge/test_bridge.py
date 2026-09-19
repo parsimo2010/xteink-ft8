@@ -93,6 +93,21 @@ def build_decode(msg, snr=-8, df=800, new=1):
     return wsjtx_udp._pack_header(wsjtx_udp.DECODE) + payload
 
 
+def build_qso_logged(timespec=1):
+    """QSOLogged with a variable-length QDateTime (13 bytes unless spec==2)."""
+    def s(v):
+        return wsjtx_udp._pack_string(v)
+    dt = struct.pack(">qLB", 2460000, 43800000, timespec) + (struct.pack(">l", 0) if timespec == 2 else b"")
+    payload = (
+        dt
+        + s("K1ABC") + s("FN20") + struct.pack(">Q", 14074000) + s("FT8")
+        + s("-12") + s("-15") + s("10") + s("") + s("")
+        + dt
+        + s("") + s("W9XYZ") + s("EM48") + s("") + s("") + s("")
+    )
+    return wsjtx_udp._pack_header(wsjtx_udp.QSO_LOGGED) + payload
+
+
 def recv_exact(conn, n):
     buf = b""
     while len(buf) < n:
@@ -175,6 +190,24 @@ def main():
     dev.sendall(struct.pack(">L", len(json.dumps({"cmd": "qsy", "band": "20m"}))) + json.dumps({"cmd": "qsy", "band": "20m"}).encode())
     qsy = recv_frame(dev)
     check("qsy without rigctld -> not_supported", qsy.get("type") == "not_supported")
+
+    # QSOLogged parsing with variable-length QDateTime (UTC and offset specs)
+    for spec in (1, 2):
+        t, _cid, p = wsjtx_udp.parse_message(build_qso_logged(spec))
+        check("QSOLogged parses (timespec=%d)" % spec,
+              t == wsjtx_udp.QSO_LOGGED and p["dx_call"] == "K1ABC" and p["my_call"] == "W9XYZ",
+              str(p)[:80])
+
+    # decodes_ack must NOT drop CQ decodes (the device replies to them later)
+    dev.sendall(struct.pack(">L", len(json.dumps({"cmd": "decodes_ack", "seq": target_id}))) + json.dumps({"cmd": "decodes_ack", "seq": target_id}).encode())
+    dev.sendall(struct.pack(">L", len(json.dumps({"cmd": "reply", "decode_id": target_id}))) + json.dumps({"cmd": "reply", "decode_id": target_id}).encode())
+    resp = recv_frame(dev)
+    check("reply still works after decodes_ack", resp.get("type") == "ok_dispatch", str(resp)[:80])
+
+    # status push carries the band name derived from the dial frequency
+    wsjtx.sendto(build_status(), wsjtx_addr)
+    st = recv_frame(dev)
+    check("status push includes band", st.get("type") == "status" and st.get("band") == "20m", str(st)[:80])
 
     print("\n==== %d passed, %d failed ====" % (len(PASS), len(FAIL)))
     if FAIL:

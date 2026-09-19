@@ -170,7 +170,14 @@ class Bridge:
         }
 
     def _cmd_get_status(self, _obj):
-        return {"type": "status", **self.status}
+        return self._status_frame()
+
+    def _status_frame(self):
+        return {
+            "type": "status",
+            "band": self._band(self.status.get("dial_frequency", 0)),
+            **self.status,
+        }
 
     def _cmd_get_decodes(self, _obj):
         return {"type": "decodes", **self.tracker.snapshot(time.time())}
@@ -237,7 +244,7 @@ class Bridge:
             log.error("failed to send control to %s: %s", self._ctrl_addr, e)
 
     def _push_status(self):
-        self.server.broadcast({"type": "status", **self.status})
+        self.server.broadcast(self._status_frame())
 
     def on_device_connect(self, addr):
         log.info("device link opened: %s", addr)

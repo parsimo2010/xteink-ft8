@@ -10,10 +10,12 @@ set -euo pipefail
 export DISPLAY="${DISPLAY:-:1}"
 XVFB_SCREEN="${XVFB_SCREEN:-1280x800x24}"
 
-# Start Xvfb once; it is left running across WSJT-X restarts.
+# Start Xvfb once; it is left running across WSJT-X restarts. Its output goes
+# to stdout (the systemd journal) - do NOT log to /var/log, the service runs
+# as a non-root user and could not create the file.
 if ! pgrep -x Xvfb >/dev/null 2>&1; then
   echo "starting Xvfb on $DISPLAY"
-  Xvfb "$DISPLAY" -screen 0 "$XVFB_SCREEN" >/var/log/xvfb.log 2>&1 &
+  Xvfb "$DISPLAY" -screen 0 "$XVFB_SCREEN" &
   sleep 2
 fi
 
