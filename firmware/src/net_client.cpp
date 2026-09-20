@@ -68,9 +68,11 @@ void NetClient::update() {
 
 void NetClient::connect_tcp() {
   if (!_client.connect(cfg::BRIDGE_HOST, cfg::BRIDGE_PORT)) {
+    Serial.printf("[net] tcp %s:%u FAILED\n", cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
     _client.stop();
     return;
   }
+  Serial.printf("[net] tcp %s:%u ok\n", cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
   _connected = true;
   // Announce to the bridge.
   JsonDocument doc;

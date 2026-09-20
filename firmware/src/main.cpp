@@ -498,6 +498,8 @@ void setup() {
 
   input.begin();
   net.begin();
+  Serial.printf("[net] joining SSID '%s', bridge %s:%u\n",
+                cfg::WIFI_SSID, cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
   g_dirty = true;
 }
 
@@ -511,6 +513,7 @@ void loop() {
   // Link indicator follows the TCP state (cleared on drop, set on reconnect).
   if (g_status.link != net.connected()) {
     g_status.link = net.connected();
+    Serial.printf("[net] bridge link %s\n", g_status.link ? "UP" : "DOWN");
     g_dirty = true;
   }
 
@@ -523,6 +526,7 @@ void loop() {
   }
   const uint8_t wsNow = net.wifi_status();
   if (g_status.wifiStatus != wsNow) {
+    Serial.printf("[net] wifi status %u -> %u\n", g_status.wifiStatus, wsNow);
     g_status.wifiStatus = wsNow;
     g_dirty = true;
   }
@@ -530,6 +534,7 @@ void loop() {
     String ip = net.wifi_ip();
     if (ip.length() < sizeof(g_status.ip) && strcmp(ip.c_str(), g_status.ip) != 0) {
       strlcpy(g_status.ip, ip.c_str(), sizeof(g_status.ip));
+      Serial.printf("[net] wifi ip %s\n", g_status.ip);
       g_dirty = true;
     }
   } else if (g_status.ip[0] != '\0') {
