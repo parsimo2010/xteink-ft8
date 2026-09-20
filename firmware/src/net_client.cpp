@@ -96,17 +96,21 @@ void NetClient::connect_tcp() {
 }
 
 bool NetClient::send(JsonDocument&& doc) {
-  size_t n = measureJson(doc);
+  // NOTE: serializeJson(doc, String) CLEARS the String first (ArduinoJson's
+  // Writer<String> ctor assigns null), so the frame header must be built
+  // AFTER serialization, not concat'd into the same String beforehand.
+  String json;
+  size_t n = serializeJson(doc, json);
   if (n == 0 || n > MAX_FRAME) return false;
-  String s;
-  s.reserve(n + 8);
   uint8_t hdr[4];
   hdr[0] = (n >> 24) & 0xFF;
   hdr[1] = (n >> 16) & 0xFF;
   hdr[2] = (n >> 8) & 0xFF;
   hdr[3] = n & 0xFF;
+  String s;
+  s.reserve(n + 4);
   s.concat((char*)hdr, 4);
-  serializeJson(doc, s);
+  s.concat(json);
   return enqueue_tx(s);
 }
 

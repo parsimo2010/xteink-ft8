@@ -121,6 +121,15 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   A checkout with mode 644 makes systemd fail `xteink-wsjtx` with
   "EXEC spawn ... permission denied" — `git pull` resets the worktree mode to
   the index mode, so install.sh's `chmod +x` alone does not survive updates.
+- **ArduinoJson GOTCHA (caused the eternal NO-LINK, fixed 2026):**
+  `serializeJson(doc, String)` CLEARS the String first (ArduinoJson's
+  `Writer<::String>` ctor assigns null). `NetClient::send()` used to concat
+  the 4-byte length header into the String and THEN serialize — wiping the
+  header, so every frame hit the bridge as raw `{"cm...` → "bad frame length
+  2065851245" (0x7B22636D) → socket closed → 5 s reconnect loop. Always
+  serialize first, then build header+payload. The Python bridge tests can't
+  catch this (they frame correctly in Python); only real hardware exercises
+  NetClient::send().
 - **X4 Pro network diagnostics:** until the FIRST successful bridge link the
   device shows a full-screen **NET DIAGNOSTIC** instead of the decode list:
   target SSID, raw WiFi.status() code + meaning (0 IDLE, 1 NO-SSID,
