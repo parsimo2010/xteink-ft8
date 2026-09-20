@@ -67,7 +67,9 @@ void NetClient::update() {
 }
 
 void NetClient::connect_tcp() {
+  _tcp_tries++;
   if (!_client.connect(cfg::BRIDGE_HOST, cfg::BRIDGE_PORT)) {
+    _tcp_fails++;
     Serial.printf("[net] tcp %s:%u FAILED\n", cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
     _client.stop();
     return;

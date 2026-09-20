@@ -196,9 +196,11 @@ The bridge logs `bridge ready: rx=127.0.0.1:2238 ... device=0.0.0.0:4510`.
 
 1. Power the Pi. It boots the AP + WSJT-X + bridge automatically (~1–2 min).
 2. Power the X4 Pro. It joins the AP and connects to `192.168.4.1:4510`.
-   The status bar tells you where it is in that chain: **NO-SSID** (AP not
-   visible), **NO-WIFI** (not associated), **`192.168.4.x` NO-LINK** (on WiFi,
-   bridge unreachable), or no tag at all (link up).
+   Until the first successful link it shows a **NET DIAGNOSTIC** screen: SSID,
+   WiFi status code, whether its own scan sees the AP (with RSSI), its DHCP IP,
+   and TCP try/fail counts — then it auto-switches to decodes. Afterwards the
+   status bar shows: **NO-SSID**/**NO-WIFI** (not associated), **`192.168.4.x`
+   NO-LINK** (on WiFi, bridge unreachable), or no tag (link up).
 3. The X4 Pro fills with CQ decodes after the first decode cycle.
 4. Tap a CQ to answer it; WSJT-X drives the QSO to completion. Use the bottom
    bar for **CQ / band << >> / re-fetch / Halt**.

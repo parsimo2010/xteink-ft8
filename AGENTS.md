@@ -121,11 +121,18 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   A checkout with mode 644 makes systemd fail `xteink-wsjtx` with
   "EXEC spawn ... permission denied" — `git pull` resets the worktree mode to
   the index mode, so install.sh's `chmod +x` alone does not survive updates.
-- **X4 Pro status bar network tags** (main.cpp `render_status_bar`):
-  no tag = TCP link up; `NO-WIFI` = not associated (or `NO-SSID` when
-  `WL_NO_SSID_AVAIL`, i.e. AP not visible — wrong SSID/2.4GHz/AP down);
-  `<ip> NO-LINK` = associated + DHCP'd (IP shown) but bridge TCP down. Backed
-  by `NetClient::wifi_connected()/wifi_status()/wifi_ip()`.
+- **X4 Pro network diagnostics:** until the FIRST successful bridge link the
+  device shows a full-screen **NET DIAGNOSTIC** instead of the decode list:
+  target SSID, raw WiFi.status() code + meaning (0 IDLE, 1 NO-SSID,
+  3 CONNECTED, 4 AUTH-FAIL, 6 DISCONNECTED), a real `WiFi.scanNetworks()`
+  every 15 s ("sees XTEINK-FT8 -52dBm" vs "NOT seen" — distinguishes radio/
+  SSID problems from auth problems), DHCP IP, and TCP try/fail counters for
+  192.168.4.1:4510. First link-up latches `g_everLinked` and switches to the
+  normal screens permanently (taps gated while diag is up). Status bar tags
+  after that: no tag = link up; `NO-WIFI`/`NO-SSID` = not associated;
+  `<ip> NO-LINK` = on WiFi, bridge TCP down. Same info on USB serial
+  (`[net] ...` @115200) when the pogo pins cooperate. Backed by
+  `NetClient::wifi_connected()/wifi_status()/wifi_ip()/scan_*()/tcp_tries()`.
 - **Raspberry Pi OS Bookworm+ uses NetworkManager, not dhcpcd.**
   `setup_ap.sh` detects this and creates an nmcli "shared" AP connection
   (`xteink-ap`, autoconnect yes, 192.168.4.1/24); it only falls back to

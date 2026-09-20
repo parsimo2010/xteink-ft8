@@ -72,6 +72,14 @@ bool g_dirty = true;
 uint32_t g_lastRefresh = 0;
 bool g_qsoLogged = false;         // set on qso_logged, shown on the detail screen
 
+// --- Network diagnostic screen (shown until the first bridge link) ---------
+bool g_everLinked = false;
+bool g_scanValid = false;
+bool g_scanSeen = false;
+int g_scanRssi = 0;
+int g_scanNets = -1;
+uint32_t g_lastScanMs = 0;
+
 // --- Tap visual feedback: one control drawn inverted for a moment ------------
 uint32_t g_flashUntil = 0;
 int g_fx = 0, g_fy = 0, g_fw = 0, g_fh = 0;
@@ -91,6 +99,7 @@ void send_cq();
 void maybe_enter_sleep();
 void flash_control(int x, int y, int w, int h, const char* label);
 void render_sleep();
+void render_net_diag();
 
 // ===========================================================================
 // Tap feedback
@@ -441,12 +450,59 @@ void render_detail() {
   ui.text(cfg::UI_MARGIN + bw + bw / 2 - ui.textWidth("Halt") / 2, y + (cfg::ACTION_H - Ui::GLYPH_H) / 2, "Halt", true);
 }
 
+const char* wifi_status_text(uint8_t s) {
+  switch (s) {
+    case WL_IDLE_STATUS: return "IDLE";
+    case WL_NO_SSID_AVAIL: return "NO-SSID";
+    case WL_SCAN_COMPLETED: return "SCAN-DONE";
+    case WL_CONNECTED: return "CONNECTED";
+    case WL_CONNECT_FAILED: return "AUTH-FAIL";
+    case WL_CONNECTION_LOST: return "LOST";
+    default: return "DISCONNECTED";
+  }
+}
+
+void render_net_diag() {
+  const int x = cfg::UI_MARGIN + 6;
+  int y = cfg::UI_MARGIN + 10;
+  char b[88];
+  ui.textLarge(x, y, "NET DIAGNOSTIC", true);
+  y += Ui::LARGE_H + 16;
+  snprintf(b, sizeof(b), "SSID  %s", cfg::WIFI_SSID);
+  ui.text(x, y, b, true); y += 22;
+  snprintf(b, sizeof(b), "WIFI  %u %s", g_status.wifiStatus, wifi_status_text(g_status.wifiStatus));
+  ui.text(x, y, b, true); y += 22;
+  if (!g_scanValid) {
+    ui.text(x, y, "SCAN  scanning...", true);
+  } else if (g_scanSeen) {
+    snprintf(b, sizeof(b), "SCAN  sees %s %ddBm (%d nets)", cfg::WIFI_SSID, g_scanRssi, g_scanNets);
+    ui.text(x, y, b, true);
+  } else {
+    snprintf(b, sizeof(b), "SCAN  %s NOT seen (%d nets)", cfg::WIFI_SSID, g_scanNets);
+    ui.text(x, y, b, true);
+  }
+  y += 22;
+  if (g_status.wifi) {
+    snprintf(b, sizeof(b), "IP    %s", g_status.ip[0] ? g_status.ip : "...");
+    ui.text(x, y, b, true); y += 22;
+  }
+  snprintf(b, sizeof(b), "TCP   %s:%u", cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
+  ui.text(x, y, b, true); y += 22;
+  snprintf(b, sizeof(b), "      %lu tries %lu failed",
+           (unsigned long)net.tcp_tries(), (unsigned long)net.tcp_fails());
+  ui.text(x, y, b, true); y += 30;
+  ui.hline(cfg::UI_MARGIN, y, contentW(), true); y += 16;
+  ui.text(x, y, "auto-switches to decodes on first link", true);
+}
+
 void render() {
   uint8_t* fb = display.getFrameBuffer();
   ui.setTarget(fb, g_lw, g_lh, display.getDisplayWidth(), display.getDisplayHeight(), cfg::UI_ROTATION);
   ui.clear();
 
-  if (g_screen == Screen::List) {
+  if (!g_everLinked) {
+    render_net_diag();
+  } else if (g_screen == Screen::List) {
     render_status_bar();
     render_list();
     render_action_bar();
@@ -514,6 +570,7 @@ void loop() {
   if (g_status.link != net.connected()) {
     g_status.link = net.connected();
     Serial.printf("[net] bridge link %s\n", g_status.link ? "UP" : "DOWN");
+    if (g_status.link) g_everLinked = true;
     g_dirty = true;
   }
 
@@ -542,6 +599,26 @@ void loop() {
     g_dirty = true;
   }
 
+  // While still unlinked: scan for the target AP every 15 s so the on-screen
+  // diagnostic can distinguish "radio sees nothing" from "sees it, can't join".
+  if (!g_everLinked && (!g_scanValid || (int32_t)(millis() - g_lastScanMs) >= 15000)) {
+    g_lastScanMs = millis();
+    int n = net.scan_networks();
+    g_scanNets = n;
+    g_scanSeen = false;
+    g_scanRssi = 0;
+    for (int i = 0; i < n; i++) {
+      if (net.scan_ssid(i) == cfg::WIFI_SSID) {
+        g_scanSeen = true;
+        g_scanRssi = net.scan_rssi(i);
+        break;
+      }
+    }
+    net.scan_delete();
+    g_scanValid = true;
+    g_dirty = true;
+  }
+
   // Drain network messages.
   JsonDocument doc;
   while (net.poll(doc)) {
@@ -561,7 +638,7 @@ void loop() {
   // Touch taps: the SDK reports normalized coords in the panel-native
   // landscape frame; undo the UI rotation to get logical coords.
   float nx, ny;
-  if (input.wasTouchTap(nx, ny)) {
+  if (input.wasTouchTap(nx, ny) && g_everLinked) {
     int lx = 0, ly = 0;
     if (cfg::UI_ROTATION == 1) {           // portrait, panel 90 deg CW
       lx = (int)((1.0f - ny) * (g_lw - 1));
