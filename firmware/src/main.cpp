@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <BatteryMonitor.h>
 #include <BoardConfig.h>
 #include <EInkDisplay.h>
 #include <InputManager.h>
@@ -79,6 +80,16 @@ bool g_scanSeen = false;
 int g_scanRssi = 0;
 int g_scanNets = -1;
 uint32_t g_lastScanMs = 0;
+
+// --- Battery (CW2017 gauge via the SDK BatteryMonitor) ----------------------
+BatteryMonitor g_battery;
+uint16_t g_battPct = 0xFFFF;      // 0xFFFF = not known yet
+uint32_t g_lastBattMs = 0;
+
+void battery_str(char* out, size_t n) {
+  if (g_battPct > 100) snprintf(out, n, "--");
+  else snprintf(out, n, "%u%%", (unsigned)g_battPct);
+}
 
 // --- Tap visual feedback: one control drawn inverted for a moment ------------
 uint32_t g_flashUntil = 0;
@@ -380,12 +391,17 @@ void render_status_bar() {
     snprintf(netTag, sizeof(netTag), "%s",
              g_status.wifiStatus == WL_NO_SSID_AVAIL ? "NO-SSID " : "NO-WIFI ");
   }
+  char batt[8];
+  battery_str(batt, sizeof(batt));
   snprintf(line, sizeof(line), "%s%s %s %s %s", netTag,
            g_status.band, g_status.mode, g_status.myCall, g_status.myGrid);
   int ty = cfg::UI_MARGIN + (cfg::STATUS_H - Ui::GLYPH_H) / 2;
   ui.text(cfg::UI_MARGIN + 4, ty, line, true);
+  // Right side: battery %, with TX to its left while transmitting.
+  int rx = cfg::UI_MARGIN + contentW() - 4 - (int)ui.textWidth(batt);
+  ui.text(rx, ty, batt, true);
   if (g_status.transmitting) {
-    ui.text(cfg::UI_MARGIN + contentW() - 4 - ui.textWidth("TX"), ty, "TX", true);
+    ui.text(rx - 6 - (int)ui.textWidth("TX"), ty, "TX", true);
   }
   ui.hline(cfg::UI_MARGIN, cfg::UI_MARGIN + cfg::STATUS_H - 1, contentW(), true);
 }
@@ -508,6 +524,10 @@ void render_net_diag() {
     snprintf(b, sizeof(b), "IP    %s", g_status.ip[0] ? g_status.ip : "...");
     ui.text(x, y, b, true); y += 22;
   }
+  char batt[8];
+  battery_str(batt, sizeof(batt));
+  snprintf(b, sizeof(b), "BATT  %s", batt);
+  ui.text(x, y, b, true); y += 22;
   snprintf(b, sizeof(b), "TCP   %s:%u", cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
   ui.text(x, y, b, true); y += 22;
   snprintf(b, sizeof(b), "      %lu tries %lu failed",
@@ -626,6 +646,19 @@ void loop() {
   } else if (g_status.ip[0] != '\0') {
     g_status.ip[0] = '\0';
     g_dirty = true;
+  }
+
+  // Battery: retry every 3 s until the gauge reports a valid SoC, then poll
+  // every 60 s. Keeps the last good value across failed reads.
+  const uint32_t battInterval = (g_battPct > 100) ? 3000 : 60000;
+  if ((int32_t)(millis() - g_lastBattMs) >= (int32_t)battInterval) {
+    g_lastBattMs = millis();
+    uint16_t pct;
+    if (g_battery.readPercentageChecked(pct) && pct != g_battPct) {
+      g_battPct = pct;
+      Serial.printf("[bat] %u%%\n", (unsigned)pct);
+      g_dirty = true;
+    }
   }
 
   // While still unlinked: scan for the target AP every 15 s so the on-screen

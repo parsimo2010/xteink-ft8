@@ -133,6 +133,15 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   `<ip> NO-LINK` = on WiFi, bridge TCP down. Same info on USB serial
   (`[net] ...` @115200) when the pogo pins cooperate. Backed by
   `NetClient::wifi_connected()/wifi_status()/wifi_ip()/scan_*()/tcp_tries()`.
+- **Battery % is shown on both screens** (status bar right side, next to TX;
+  and as a `BATT` line on NET DIAGNOSTIC). Source: the X4 Pro's **CW2017 I2C
+  fuel gauge at 0x63 on the shared touch bus SDA39/SCL38** — the SDK
+  `BatteryMonitor` lib (add it to `lib_deps` as a symlink like the other SDK
+  libs) uploads the OEM 80-byte BATINFO profile and reads SoC; gauge reports
+  0%/invalid until ready, so the UI retries every 3 s until the first good
+  read, then polls every 60 s and keeps the last good value (`--` when
+  unknown). `batteryAdc` is PIN_UNASSIGNED on X4 Pro; the gauge backend is
+  selected at runtime and gated by `FREEINK_DEVICE_X4PRO`.
 - **Raspberry Pi OS Bookworm+ uses NetworkManager, not dhcpcd.**
   `setup_ap.sh` detects this and creates an nmcli "shared" AP connection
   (`xteink-ap`, autoconnect yes, 192.168.4.1/24); it only falls back to
