@@ -71,13 +71,6 @@ if getent group dialout >/dev/null 2>&1; then
   usermod -aG dialout "$USER_PI" || true
 fi
 
-# Make the QMX USB sound card the system default audio device so headless
-# WSJT-X works with Audio left on "Default" (plug and play).
-bash "$SCRIPTS/setup_qmx_audio.sh" || {
-  echo "WARNING: could not set the QMX as the default audio device."
-  echo "Select the audio devices manually in WSJT-X over VNC once."
-}
-
 # Install and enable the bridge service.
 install -m 644 "$SCRIPTS/xteink-bridge.service" /etc/systemd/system/
 # Point %h at the service user's real home and fix the User= line.
@@ -111,9 +104,18 @@ echo "  * xteink-rigctld.service (band control; QMX/QMX+ auto-detected on USB)"
 echo ""
 echo "Next steps (do once at home):"
 echo "  1. sudo $SCRIPTS/setup_ap.sh            # bring up the WiFi AP"
-echo "  2. WSJTXCALL=W9XYZ WSJTXGRID=EM48 $SCRIPTS/preseed_wsjtx.sh"
-echo "     (run as $USER_PI, NOT sudo, with WSJT-X closed; or open WSJT-X over"
-echo "      VNC once and set UDP Server 127.0.0.1:2238 + 'Accept UDP requests')"
+echo "  2. Configure WSJT-X manually (desktop or VNC) - one time:"
+echo "     Radio:   Rig = 'Hamlib NET rigctl', Network Server = 127.0.0.1:4532,"
+echo "              PTT Method = CAT  (xteink-rigctld OWNS the QMX serial port;"
+echo "              do NOT point WSJT-X directly at /dev/ttyACM0 or Test CAT fails)"
+echo "     Audio:   select the QMX USB sound card for input and output"
+echo "     Reporting: UDP Server 127.0.0.1:2238, check 'Accept UDP requests'"
+echo "     General: enable 'Auto Seq'"
+echo "     Station: callsign + grid"
+echo "     Optionally preseed call/grid/UDP keys with WSJT-X CLOSED:"
+echo "       WSJTXCALL=W9XYZ WSJTXGRID=EM48 $SCRIPTS/preseed_wsjtx.sh  (as $USER_PI)"
+echo "     To use direct serial CAT instead, disable the shared rigctld first:"
+echo "       sudo systemctl disable --now xteink-rigctld   (band buttons stop working)"
 echo "  3. Edit firmware/include/config.h (SSID/pass/bridge IP) and flash the X4 Pro."
 echo ""
 echo "Field boot: power on the Pi, wait ~1-2 min, power on the X4 Pro. No"

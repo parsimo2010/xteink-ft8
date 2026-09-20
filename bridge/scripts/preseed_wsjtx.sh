@@ -1,24 +1,18 @@
 #!/usr/bin/env bash
-# Best-effort preseed of WSJT-X settings so field boots need no manual config.
+# Best-effort preseed of the WSJT-X callsign/grid/UDP keys so field boots need
+# less manual config. OPTIONAL: everything this writes can also be set in the
+# WSJT-X GUI. Rig, PTT and audio are deliberately NOT touched - configure
+# those manually once in WSJT-X (see docs/SETUP.md step 4).
 #
-# WSJT-X stores everything in ONE INI group, [Configuration], in
-# ~/.config/WSJT-X/WSJT-X.ini (verified against WSJT-X source,
-# Configuration.cpp write_settings()). The keys this script sets:
-#   MyCall, MyGrid, UDPServer, UDPServerPort, AcceptUDPRequests,
-#   Rig, CATNetworkPort, PTTMethod, PTTport, DataMode
-# Booleans are written the way QSettings writes them ("true"/"false").
-#
-# The rig keys point WSJT-X at the local rigctld ("Hamlib NET rigctl" on
-# 127.0.0.1:4532) that xteink-rigctld.service runs for the QRP Labs
-# QMX/QMX+. Because WSJT-X and the bridge then share ONE rigctld, the X4
-# Pro's band buttons retune the WSJT-X session too. PTT stays CAT and the
-# TX mode is forced to USB (what FT8 needs on the QMX).
+# Config file location (verified against WSJT-X user guide + source):
+#   * WSJT-X 3.x / wsjtx-improved 3.x:  ~/.config/WSJT-X.ini
+#   * WSJT-X 2.x:                       ~/.config/WSJT-X/WSJT-X.ini
+# All keys live in the single [Configuration] group; booleans are written the
+# way QSettings writes them ("true"/"false"). The keys this script sets:
+#   MyCall, MyGrid, UDPServer, UDPServerPort, AcceptUDPRequests
 #
 # IMPORTANT: WSJT-X rewrites its INI on exit, so it must NOT be running while
 # this script edits the file. Run it as the desktop user (NOT sudo).
-# A one-time visual check over VNC is still recommended for the AUDIO device
-# selection (sound card names are machine-specific and cannot be preseeded
-# reliably).
 #
 # Required env / args:
 #   WSJTXCALL  your callsign
@@ -26,15 +20,6 @@
 #   UDPSERVER    default 127.0.0.1
 #   UDPPORT      default 2238   (where WSJT-X SENDS; the bridge listens here)
 #   CTRLPORT     default 2237   (WSJT-X "Accept UDP requests" listen port)
-#   WSJTX_RIG    default "Hamlib NET rigctl" (exact rig-dropdown name)
-#   RIGCTLD_ADDR default 127.0.0.1:4532 (must match start_rigctld.sh)
-#   WSJTX_NO_RIG=1  skip the rig keys entirely
-#
-# Audio is deliberately NOT written by default: install.sh makes the QMX USB
-# sound card the system default (setup_qmx_audio.sh), and WSJT-X falls back to
-# the default device when SoundInName/SoundOutName are absent. To pin exact
-# device strings instead (from the WSJT-X Settings -> Audio dropdowns), set:
-#   WSJTX_SNDIN / WSJTX_SNDOUT
 set -euo pipefail
 
 WSJTXCALL="${WSJTXCALL:?set WSJTXCALL (your callsign)}"
@@ -42,8 +27,6 @@ WSJTXGRID="${WSJTXGRID:?set WSJTXGRID (your grid)}"
 UDPSERVER="${UDPSERVER:-127.0.0.1}"
 UDPPORT="${UDPPORT:-2238}"
 CTRLPORT="${CTRLPORT:-2237}"
-WSJTX_RIG="${WSJTX_RIG:-Hamlib NET rigctl}"
-RIGCTLD_ADDR="${RIGCTLD_ADDR:-127.0.0.1:4532}"
 
 if [ "$(id -u)" -eq 0 ]; then
   echo "do NOT run with sudo - WSJT-X config lives in the desktop user's home." >&2
@@ -56,14 +39,16 @@ if pgrep -x wsjtx >/dev/null 2>&1; then
   exit 1
 fi
 
-# Locate the config file.
+# Locate the config file (3.x flat file first, then 2.x directory layout).
 INI=""
-for p in "$HOME/.config/WSJT-X/WSJT-X.ini" "$HOME/.config/wsjt-x/wsjt-x.ini"; do
+for p in "$HOME/.config/WSJT-X.ini" "$HOME/.config/WSJT-X/WSJT-X.ini" "$HOME/.config/wsjt-x/wsjt-x.ini"; do
   [ -f "$p" ] && INI="$p" && break
 done
 if [ -z "$INI" ]; then
-  echo "WSJT-X config not found. Launch WSJT-X once (over VNC) so it creates"
-  echo "its config, close it, then re-run this script."
+  echo "WSJT-X config not found. Launch WSJT-X once so it creates its config,"
+  echo "close it, then re-run this script. Expected locations:"
+  echo "  ~/.config/WSJT-X.ini           (WSJT-X 3.x / wsjtx-improved)"
+  echo "  ~/.config/WSJT-X/WSJT-X.ini    (WSJT-X 2.x)"
   exit 1
 fi
 echo "Found WSJT-X config: $INI"
@@ -89,28 +74,11 @@ set_key Configuration UDPServer "$UDPSERVER"
 set_key Configuration UDPServerPort "$UDPPORT"
 set_key Configuration AcceptUDPRequests "true"
 
-if [ "${WSJTX_NO_RIG:-0}" != "1" ]; then
-  # Route WSJT-X through the shared rigctld (see xteink-rigctld.service).
-  # PTTMethod: 0=VOX 1=CAT 2=DTR 3=RTS;  DataMode: 0=None 1=USB 2=Data/Pkt.
-  set_key Configuration Rig "$WSJTX_RIG"
-  set_key Configuration CATNetworkPort "$RIGCTLD_ADDR"
-  set_key Configuration PTTMethod 1
-  set_key Configuration PTTport CAT
-  set_key Configuration DataMode 1
-  echo "Preseeded rig: '$WSJTX_RIG' -> $RIGCTLD_ADDR (PTT=CAT, mode forced USB)"
-fi
-
-if [ -n "${WSJTX_SNDIN:-}" ]; then set_key Configuration SoundInName "$WSJTX_SNDIN"; fi
-if [ -n "${WSJTX_SNDOUT:-}" ]; then set_key Configuration SoundOutName "$WSJTX_SNDOUT"; fi
-if [ -n "${WSJTX_SNDIN:-}${WSJTX_SNDOUT:-}" ]; then
-  echo "Preseeded audio: in='${WSJTX_SNDIN:-default}' out='${WSJTX_SNDOUT:-default}'"
-else
-  echo "Audio left on 'Default' (setup_qmx_audio.sh made the QMX the default card)."
-fi
-
 echo "Preseeded callsign=$WSJTXCALL grid=$WSJTXGRID udp=${UDPSERVER}:${UDPPORT} ctrl=${CTRLPORT}"
-echo "NOTE: verify in WSJT-X (Settings -> Radio/Reporting) that Rig is"
-echo "      '$WSJTX_RIG' (${RIGCTLD_ADDR}), 'UDP Server' is ${UDPSERVER}:${UDPPORT},"
-echo "      'Accept UDP requests' is checked, and pick the QMX USB audio devices"
-echo "      on Settings -> Audio (device names cannot be preseeded)."
+echo "Still to set manually in WSJT-X (once):"
+echo "  Radio:  Rig='Hamlib NET rigctl', Network Server=127.0.0.1:4532, PTT=CAT"
+echo "          (xteink-rigctld owns the QMX serial port - don't use /dev/ttyACM0"
+echo "          directly, or disable that service first)"
+echo "  Audio:  select the QMX USB sound card (in and out)"
+echo "  General: enable 'Auto Seq'"
 echo "Backup saved to $INI.bak.*"
