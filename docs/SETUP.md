@@ -212,6 +212,7 @@ The bridge logs `bridge ready: rx=127.0.0.1:2238 ... device=0.0.0.0:4510`.
 | Symptom | Fix |
 |---------|-----|
 | Device shows **NO-WIFI / NO-SSID** | Not associated to the AP. `NO-SSID` = AP not even visible: AP up? (Bookworm: `nmcli con show xteink-ap`; legacy: `hostapd` running). Credentials/SSID in firmware `config.h` match `setup_ap.sh`? 2.4 GHz? Re-flash after any config.h change. |
+| Diagnostic shows **LINK ... last drop 211** | `NO_AP_FOUND_IN_AUTHMODE_THRESHOLD`: the ESP32 refuses APs below WPA2-PSK — the NM hotspot came up with weaker/mixed security. Re-run `sudo bash bridge/scripts/setup_ap.sh` (now pins `proto rsn` + CCMP + `pmf disable`) and reconnect. Verify: `nmcli -f wifi-sec.key-mgmt,wifi-sec.proto,wifi-sec.pmf con show xteink-ap`. |
 | Device shows **`<ip>` NO-LINK** | WiFi + DHCP are fine (IP shown); the bridge TCP (port 4510) is unreachable: `systemctl status xteink-bridge`, and `sudo journalctl -u xteink-bridge -e`. Bridge listening on 0.0.0.0:4510? |
 | Bridge logs **unsupported schema 2** repeatedly | Fixed in current code (the bridge answers WSJT-X heartbeats to negotiate schema 3). `cd ~/xteink-ft8 && git pull && sudo systemctl restart xteink-bridge`. |
 | AP not up after reboot | Bookworm: `sudo nmcli con up xteink-ap` and check `nmcli -f NAME,AUTOCONNECT con show`. Legacy: `systemctl status hostapd dnsmasq dhcpcd`. |

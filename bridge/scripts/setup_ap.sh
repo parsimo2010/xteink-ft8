@@ -53,9 +53,18 @@ if [ "$USE_NM" = 1 ]; then
         ipv4.addresses "$AP_IP" \
         ipv6.method ignore \
         wifi-sec.key-mgmt wpa-psk \
+        wifi-sec.proto rsn \
+        wifi-sec.pairwise ccmp \
+        wifi-sec.group ccmp \
+        wifi-sec.pmf disable \
         wifi-sec.psk "$AP_PASS"
   nmcli con up xteink-ap
   echo "NetworkManager hotspot '$AP_SSID' active on $IFACE ($AP_IP)."
+  # Show what was actually configured: ESP32 STAs reject anything below
+  # WPA2-PSK (esp reason 211, NO_AP_FOUND_IN_AUTHMODE_THRESHOLD), and some NM
+  # versions advertise mixed WPA/WPA3 or PMF by default.
+  nmcli -f 802-11-wireless.ssid,wifi-sec.key-mgmt,wifi-sec.proto,wifi-sec.pmf,ipv4.method \
+        con show xteink-ap
 else
   # -------------------------------------------------------------------------
   # Legacy stack (Bullseye and older): hostapd + dnsmasq + a static IP via
