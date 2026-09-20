@@ -38,6 +38,13 @@ def build_heartbeat():
     return wsjtx_udp._pack_header(wsjtx_udp.HEARTBEAT) + struct.pack(">L", 3) + wsjtx_udp._pack_string("WSJT-X") + wsjtx_udp._pack_string("2.6.0")
 
 
+def build_heartbeat_schema2():
+    """What a real WSJT-X sends first: schema 2 until the client negotiates."""
+    hdr = struct.pack(">LLL", wsjtx_udp.MAGIC, 2, wsjtx_udp.HEARTBEAT)
+    hdr += wsjtx_udp._pack_string("WSJT-X")
+    return hdr + struct.pack(">L", 3) + wsjtx_udp._pack_string("WSJT-X") + wsjtx_udp._pack_string("3.2.0")
+
+
 def build_status():
     fields = {
         "dial_frequency": 14074000,
@@ -144,6 +151,18 @@ def main():
     # --- simulate WSJT-X ---------------------------------------------------
     wsjtx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     wsjtx_addr = ("127.0.0.1", RX_PORT)
+
+    # schema negotiation: WSJT-X opens with a schema-2 Heartbeat; the bridge
+    # must answer with a schema-3 Heartbeat so WSJT-X upgrades this client.
+    wsjtx.settimeout(3)
+    wsjtx.sendto(build_heartbeat_schema2(), wsjtx_addr)
+    hb = wsjtx.recvfrom(65535)[0]
+    magic, schema, mtype = struct.unpack_from(">LLL", hb, 0)
+    check("bridge answers schema-2 heartbeat with schema 3",
+          magic == wsjtx_udp.MAGIC and schema == 3 and mtype == wsjtx_udp.HEARTBEAT,
+          "magic=%x schema=%d type=%d" % (magic, schema, mtype))
+    _t, _c, hp = wsjtx_udp.parse_message(hb)
+    check("heartbeat reply declares max_schema 3", hp.get("max_schema") == 3, str(hp))
 
     wsjtx.sendto(build_status(), wsjtx_addr)
     time.sleep(0.05)

@@ -43,8 +43,11 @@ struct StatusInfo {
   char txMessage[64];
   bool transmitting;
   bool link;
+  bool wifi;
+  uint8_t wifiStatus;
+  char ip[16];
 };
-StatusInfo g_status = {"", "", "", "FT8", "", false, false};
+StatusInfo g_status = {"", "", "", "FT8", "", false, false, false, 0, ""};
 
 // Scroll offset into g_rows.
 int g_scroll = 0;
@@ -357,7 +360,18 @@ void maybe_enter_sleep() {
 // ===========================================================================
 void render_status_bar() {
   char line[64];
-  snprintf(line, sizeof(line), "%s%s %s %s %s", g_status.link ? "" : "NO-LINK ",
+  char netTag[32];
+  if (g_status.link) {
+    netTag[0] = '\0';
+  } else if (g_status.wifi) {
+    // On the AP but no bridge TCP: show our IP so DHCP/join is provable.
+    snprintf(netTag, sizeof(netTag), "%s NO-LINK ",
+             g_status.ip[0] ? g_status.ip : "WIFI");
+  } else {
+    snprintf(netTag, sizeof(netTag), "%s",
+             g_status.wifiStatus == WL_NO_SSID_AVAIL ? "NO-SSID " : "NO-WIFI ");
+  }
+  snprintf(line, sizeof(line), "%s%s %s %s %s", netTag,
            g_status.band, g_status.mode, g_status.myCall, g_status.myGrid);
   int ty = cfg::UI_MARGIN + (cfg::STATUS_H - Ui::GLYPH_H) / 2;
   ui.text(cfg::UI_MARGIN + 4, ty, line, true);
@@ -497,6 +511,29 @@ void loop() {
   // Link indicator follows the TCP state (cleared on drop, set on reconnect).
   if (g_status.link != net.connected()) {
     g_status.link = net.connected();
+    g_dirty = true;
+  }
+
+  // WiFi indicator: distinguishes "not on the AP" (NO-WIFI) from "on the AP
+  // but the bridge TCP link is down" (shows our IP + NO-LINK).
+  const bool wifiNow = net.wifi_connected();
+  if (g_status.wifi != wifiNow) {
+    g_status.wifi = wifiNow;
+    g_dirty = true;
+  }
+  const uint8_t wsNow = net.wifi_status();
+  if (g_status.wifiStatus != wsNow) {
+    g_status.wifiStatus = wsNow;
+    g_dirty = true;
+  }
+  if (wifiNow) {
+    String ip = net.wifi_ip();
+    if (ip.length() < sizeof(g_status.ip) && strcmp(ip.c_str(), g_status.ip) != 0) {
+      strlcpy(g_status.ip, ip.c_str(), sizeof(g_status.ip));
+      g_dirty = true;
+    }
+  } else if (g_status.ip[0] != '\0') {
+    g_status.ip[0] = '\0';
     g_dirty = true;
   }
 

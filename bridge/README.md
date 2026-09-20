@@ -19,7 +19,7 @@ Defaults:
 
 | file | purpose |
 |------|---------|
-| `wsjtx_udp.py` | WSJT-X UDP protocol encode/decode (pure struct) |
+| `wsjtx_udp.py` | WSJT-X UDP protocol encode/decode (pure struct; answers WSJT-X heartbeats to negotiate schema 3) |
 | `qso_tracker.py` | CQ decode tracking + WSJT-X message classification |
 | `device_server.py` | length-framed JSON TCP server for the X4 Pro |
 | `rigctl.py` | band change via Hamlib `rigctld` (on by default) |

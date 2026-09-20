@@ -16,6 +16,12 @@ class NetClient {
   void update();
   // True when the TCP link to the bridge is up.
   bool connected() const { return _connected; }
+  // True when associated to the WiFi AP (independent of the TCP link).
+  bool wifi_connected() const { return _wifi_ok(); }
+  // Raw WiFi.status() (WL_* codes) for diagnostics.
+  uint8_t wifi_status() const { return (uint8_t)WiFi.status(); }
+  // Station IP as dotted text (empty until associated).
+  String wifi_ip() const { return _wifi_ok() ? WiFi.localIP().toString() : String(); }
   // Stage a command object to send. Returns false if the TX queue is full.
   bool send(JsonDocument&& doc);
   // Pop the next received message into `out`. Returns true if one was dequeued.

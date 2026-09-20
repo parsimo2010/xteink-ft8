@@ -91,23 +91,29 @@ class Bridge:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((self.args.rx_host, self.args.rx_port))
+        self._rx_sock = sock
         log.info("UDP rx bound on %s:%d", self.args.rx_host, self.args.rx_port)
         while True:
-            data, _addr = sock.recvfrom(65535)
+            data, addr = sock.recvfrom(65535)
             try:
-                self._on_wsjtx_datagram(data)
+                self._on_wsjtx_datagram(data, addr)
             except Exception:  # noqa: BLE001 - never die on a bad datagram
                 log.exception("error handling WSJT-X datagram")
 
-    def _on_wsjtx_datagram(self, data):
+    def _on_wsjtx_datagram(self, data, addr):
         msg_type, client_id, payload = wsjtx_udp.parse_message(data)
 
         if msg_type == wsjtx_udp.HEARTBEAT:
-            log.debug(
-                "heartbeat from WSJT-X %s (%s) max_schema=%d",
+            # Answer with our own Heartbeat so WSJT-X negotiates this client
+            # up to schema 3 (until then it streams schema-2 messages whose
+            # float/QDateTime encoding we cannot parse).
+            self._rx_sock.sendto(wsjtx_udp.build_heartbeat("xteink"), addr)
+            log.info(
+                "heartbeat from WSJT-X %s (%s) max_schema=%d; replied schema %d",
                 payload.get("version"),
                 payload.get("revision"),
                 payload.get("max_schema"),
+                wsjtx_udp.SCHEMA,
             )
             return
 

@@ -196,6 +196,9 @@ The bridge logs `bridge ready: rx=127.0.0.1:2238 ... device=0.0.0.0:4510`.
 
 1. Power the Pi. It boots the AP + WSJT-X + bridge automatically (~1–2 min).
 2. Power the X4 Pro. It joins the AP and connects to `192.168.4.1:4510`.
+   The status bar tells you where it is in that chain: **NO-SSID** (AP not
+   visible), **NO-WIFI** (not associated), **`192.168.4.x` NO-LINK** (on WiFi,
+   bridge unreachable), or no tag at all (link up).
 3. The X4 Pro fills with CQ decodes after the first decode cycle.
 4. Tap a CQ to answer it; WSJT-X drives the QSO to completion. Use the bottom
    bar for **CQ / band << >> / re-fetch / Halt**.
@@ -206,13 +209,16 @@ The bridge logs `bridge ready: rx=127.0.0.1:2238 ... device=0.0.0.0:4510`.
 
 | Symptom | Fix |
 |---------|-----|
-| Device shows **No link** | AP up? (Bookworm: `nmcli con show xteink-ap`; legacy: `iw dev` / `hostapd` running). Credentials in `config.h` match `setup_ap.sh`? Bridge listening on an address the device can reach? |
+| Device shows **NO-WIFI / NO-SSID** | Not associated to the AP. `NO-SSID` = AP not even visible: AP up? (Bookworm: `nmcli con show xteink-ap`; legacy: `hostapd` running). Credentials/SSID in firmware `config.h` match `setup_ap.sh`? 2.4 GHz? Re-flash after any config.h change. |
+| Device shows **`<ip>` NO-LINK** | WiFi + DHCP are fine (IP shown); the bridge TCP (port 4510) is unreachable: `systemctl status xteink-bridge`, and `sudo journalctl -u xteink-bridge -e`. Bridge listening on 0.0.0.0:4510? |
+| Bridge logs **unsupported schema 2** repeatedly | Fixed in current code (the bridge answers WSJT-X heartbeats to negotiate schema 3). `cd ~/xteink-ft8 && git pull && sudo systemctl restart xteink-bridge`. |
 | AP not up after reboot | Bookworm: `sudo nmcli con up xteink-ap` and check `nmcli -f NAME,AUTOCONNECT con show`. Legacy: `systemctl status hostapd dnsmasq dhcpcd`. |
 | **No decodes** on the X4 Pro | WSJT-X UDP Server port must match the bridge `--rx-port` (default **2238**). |
 | **Tap does nothing** | WSJT-X "Accept UDP requests" must be checked; controls port **2237** reachable from the bridge. |
 | **Band change no-ops** | `systemctl status xteink-rigctld`; QMX plugged in (`ls /dev/serial/by-id/` shows a `QRP_Labs` entry)? Service user in `dialout`? Try `sudo journalctl -u xteink-rigctld -e`. Override in `/etc/default/xteink-rigctld`. |
 | **No audio / TX silent** | QMX card visible in `aplay -l`? If dmesg shows "cannot create card instance" / probe error -16, remove any `snd_usb_audio index=0` modprobe file and `/etc/asound.conf` pin, reboot, then pick the QMX device in WSJT-X Settings → Audio. |
 | WSJT-X "Test CAT" red | If Rig is a *direct serial* rig (e.g. QRP Labs QMX on /dev/ttyACM0): `xteink-rigctld` is holding the port — either set Rig to *Hamlib NET rigctl* @ `127.0.0.1:4532` (recommended; band buttons keep working) or `sudo systemctl disable --now xteink-rigctld`. Check `sudo journalctl -u xteink-rigctld -e`. |
+| WSJT-X service fails: **EXEC spawn ... permission denied** | Script lost its exec bit (old checkout). `git pull` (scripts are committed 755 now) or `chmod +x ~/xteink-ft8/bridge/scripts/*.sh && sudo systemctl restart xteink-wsjtx`. |
 | Bridge won't start | `sudo journalctl -u xteink-bridge -e` for the traceback. |
 | WSJT-X not on the virtual display | `systemctl status xteink-wsjtx`; confirm `xvfb` installed and `DISPLAY=:1` is free. |
 

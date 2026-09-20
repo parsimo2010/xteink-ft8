@@ -72,15 +72,26 @@ def _pack_header(msg_type, client_id=""):
 
 
 def _unpack_header(buf):
-    """Returns (msg_type, client_id, offset_after_header)."""
+    """Returns (msg_type, client_id, offset_after_header).
+
+    Accepts schema 2 as well as 3: WSJT-X sends schema-2 messages until a
+    client answers its Heartbeat with a schema-3 Heartbeat (negotiation).
+    Schema 2 differs only in float/QDateTime encoding, so at schema 2 only
+    HEARTBEAT (ints + byte arrays, identical in both schemas) is parseable.
+    """
     if len(buf) < 12:
         raise ProtocolError("datagram too short")
     magic, schema, msg_type = struct.unpack_from(">LLL", buf, 0)
     if magic != MAGIC:
         raise ProtocolError("bad magic 0x%08X" % magic)
-    if schema != SCHEMA:
+    if schema not in (2, SCHEMA):
         raise ProtocolError("unsupported schema %d" % schema)
     client_id, offset = _unpack_string(buf, 12)
+    if schema != SCHEMA and msg_type != HEARTBEAT:
+        raise ProtocolError(
+            "schema %d message type %d not parseable (heartbeat negotiation "
+            "pending or failed)" % (schema, msg_type)
+        )
     return msg_type, client_id, offset
 
 
@@ -251,6 +262,18 @@ def _parse_qso_logged(buf, off):
 # ---------------------------------------------------------------------------
 # Incoming messages (us -> WSJT-X)
 # ---------------------------------------------------------------------------
+
+def build_heartbeat(client_id, max_schema=SCHEMA, version="xteink-bridge", revision="1"):
+    """Client Heartbeat: declares the highest schema we can parse.
+
+    WSJT-X negotiates per client: it streams schema-2 messages to a UDP
+    server until that server answers a Heartbeat with this packet, after
+    which WSJT-X upgrades the client to schema 3.
+    """
+    payload = struct.pack(">L", max_schema)
+    payload += _pack_string(version) + _pack_string(revision)
+    return _pack_header(HEARTBEAT, client_id) + payload
+
 
 def build_reply(client_id, decode):
     """Build a Reply packet from a decode dict (the WSJT-X 'double click')."""

@@ -17,7 +17,7 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   ever shown NO-LINK), a completed real FT8 QSO, headless Pi boot,
   `flash.sh` from a release zip. Do NOT tag a release until the checklist in
   docs/RELEASE.md is green.
-- Bridge: implemented + passing (14/14; Python, stdlib only).
+- Bridge: implemented + passing (16/16; Python, stdlib only).
 - Firmware: compiles clean; built current `firmware.bin` ~997 KB.
 - Docs are complete for operators (SETUP / FLASHING / PROTOCOL / RELEASE).
 
@@ -110,6 +110,22 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   3 (v3.x only APPENDS fields, e.g. `itone` in Status — `wsjtx_udp.py`
   `_parse_status` ignores trailing bytes, so the bridge is compatible), but
   3.x moved the INI to `~/.config/WSJT-X.ini` (see above).
+- **WSJT-X schema negotiation is REQUIRED:** WSJT-X streams **schema 2** to a
+  UDP client until that client answers a Heartbeat with its own Heartbeat
+  declaring max_schema 3 (found on real hardware 2026: bridge logged
+  "unsupported schema 2" until this was implemented). The bridge replies to
+  every Heartbeat (`wsjtx_udp.build_heartbeat`) on the rx socket; schema-2
+  non-heartbeat messages are unparseable (Qt_5_0 float/QDateTime encoding)
+  and are dropped until negotiation completes.
+- **All `bridge/scripts/*.sh` are committed with the exec bit (100755).**
+  A checkout with mode 644 makes systemd fail `xteink-wsjtx` with
+  "EXEC spawn ... permission denied" — `git pull` resets the worktree mode to
+  the index mode, so install.sh's `chmod +x` alone does not survive updates.
+- **X4 Pro status bar network tags** (main.cpp `render_status_bar`):
+  no tag = TCP link up; `NO-WIFI` = not associated (or `NO-SSID` when
+  `WL_NO_SSID_AVAIL`, i.e. AP not visible — wrong SSID/2.4GHz/AP down);
+  `<ip> NO-LINK` = associated + DHCP'd (IP shown) but bridge TCP down. Backed
+  by `NetClient::wifi_connected()/wifi_status()/wifi_ip()`.
 - **Raspberry Pi OS Bookworm+ uses NetworkManager, not dhcpcd.**
   `setup_ap.sh` detects this and creates an nmcli "shared" AP connection
   (`xteink-ap`, autoconnect yes, 192.168.4.1/24); it only falls back to
@@ -124,7 +140,7 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
 
 ## Build & test commands
 
-- Bridge tests: `cd bridge && python test_bridge.py` (expect 14/14 pass).
+- Bridge tests: `cd bridge && python test_bridge.py` (expect 16/16 pass).
 - Firmware build: `cd firmware && py -3.12 -m platformio run -e x4pro`
 - Firmware flash: `py -3.12 -m platformio run -e x4pro -t upload`
 - **PlatformIO is installed under Python 3.12 only** (`py -3.12 -m platformio`).
