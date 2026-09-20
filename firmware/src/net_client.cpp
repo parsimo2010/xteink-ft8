@@ -4,6 +4,18 @@
 
 void NetClient::begin() {
   WiFi.mode(WIFI_STA);
+  WiFi.onEvent(
+      [this](WiFiEvent_t event, WiFiEventInfo_t info) {
+        _assoc_ok++;
+        Serial.printf("[net] associated (#%lu)\n", (unsigned long)_assoc_ok);
+      },
+      WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_CONNECTED);
+  WiFi.onEvent(
+      [this](WiFiEvent_t event, WiFiEventInfo_t info) {
+        _last_err = info.wifi_sta_disconnected.reason;
+        Serial.printf("[net] disconnected, reason %u\n", _last_err);
+      },
+      WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WiFi.begin(cfg::WIFI_SSID, cfg::WIFI_PASSWORD);
   WiFi.setSleep(false);
 }

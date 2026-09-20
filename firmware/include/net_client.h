@@ -28,6 +28,10 @@ class NetClient {
   // TCP connect counters (diagnostics screen).
   uint32_t tcp_tries() const { return _tcp_tries; }
   uint32_t tcp_fails() const { return _tcp_fails; }
+  // Association counters (diagnostics screen): how many times we (re)associated
+  // and the ESP32 reason code of the most recent disconnect.
+  uint32_t assoc_count() const { return _assoc_ok; }
+  uint8_t last_disconnect_reason() const { return _last_err; }
   // Station IP as dotted text (empty until associated).
   String wifi_ip() const { return _wifi_ok() ? WiFi.localIP().toString() : String(); }
   // Stage a command object to send. Returns false if the TX queue is full.
@@ -45,6 +49,8 @@ class NetClient {
   uint32_t _last_ping = 0;
   uint32_t _tcp_tries = 0;
   uint32_t _tcp_fails = 0;
+  uint32_t _assoc_ok = 0;
+  uint8_t _last_err = 0;
 
   // Inbound queue (JSON strings, compact).
   String _rx[NC_QUEUE];

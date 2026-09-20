@@ -462,6 +462,24 @@ const char* wifi_status_text(uint8_t s) {
   }
 }
 
+const char* wifi_err_text(uint8_t r) {
+  switch (r) {
+    case 0: return "none yet";
+    case 2: return "AUTH_EXPIRE";
+    case 3: return "AUTH_LEAVE";
+    case 4: return "ASSOC_EXPIRE";
+    case 5: return "ASSOC_TOOMANY";
+    case 8: return "ASSOC_LEAVE";
+    case 15: return "4WAY_TIMEOUT";
+    case 200: return "BEACON_TIMEOUT";
+    case 201: return "NO_AP_FOUND";
+    case 202: return "AUTH_FAIL";
+    case 203: return "ASSOC_FAIL";
+    case 204: return "HANDSHAKE_TIMEOUT";
+    default: return "other";
+  }
+}
+
 void render_net_diag() {
   const int x = cfg::UI_MARGIN + 6;
   int y = cfg::UI_MARGIN + 10;
@@ -471,6 +489,10 @@ void render_net_diag() {
   snprintf(b, sizeof(b), "SSID  %s", cfg::WIFI_SSID);
   ui.text(x, y, b, true); y += 22;
   snprintf(b, sizeof(b), "WIFI  %u %s", g_status.wifiStatus, wifi_status_text(g_status.wifiStatus));
+  ui.text(x, y, b, true); y += 22;
+  snprintf(b, sizeof(b), "LINK  %lu assoc, last drop %u %s",
+           (unsigned long)net.assoc_count(), net.last_disconnect_reason(),
+           wifi_err_text(net.last_disconnect_reason()));
   ui.text(x, y, b, true); y += 22;
   if (!g_scanValid) {
     ui.text(x, y, "SCAN  scanning...", true);
@@ -585,6 +607,13 @@ void loop() {
   if (g_status.wifiStatus != wsNow) {
     Serial.printf("[net] wifi status %u -> %u\n", g_status.wifiStatus, wsNow);
     g_status.wifiStatus = wsNow;
+    g_dirty = true;
+  }
+  static uint32_t shownAssoc = 0;
+  static uint8_t shownErr = 0;
+  if (net.assoc_count() != shownAssoc || net.last_disconnect_reason() != shownErr) {
+    shownAssoc = net.assoc_count();
+    shownErr = net.last_disconnect_reason();
     g_dirty = true;
   }
   if (wifiNow) {
