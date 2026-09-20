@@ -129,17 +129,27 @@ WSJT-X does the FT8 protocol heavy lifting.
 
 ## Status
 
-Hardware bring-up is **done**: as of 2026-09-12 the firmware has been flashed
-and boots on a real X4 Pro — portrait e-ink rendering, GT911 touch (with
-tap-flash feedback), page buttons, and hold-power deep sleep are all confirmed
-on-device. Still being validated end-to-end: joining the Pi AP, receiving live
-CQ decodes, and completing a real QSO via WSJT-X (see `docs/RELEASE.md`).
+Hardware bring-up is **done** (2026-09-12: e-ink, touch, buttons, deep sleep on
+a real X4 Pro). The **Pi + QMX + X4 Pro field stack is now mostly validated**
+(2026-09 session): WiFi AP join, DHCP, the TCP device link, WSJT-X schema
+negotiation, live status/decode flow, and **band change end-to-end** (device
+buttons → bridge → rigctld → QMX QSY, WSJT-X following via NET rigctl) all
+work on real hardware with wsjtx-improved 3.2 + latest hamlib (/opt/hamlib).
 
-No prebuilt release is published yet — that waits for the Pi link + a real
-QSO. Expect to tune:
+**Still open:**
 
-* The bridge's WSJT-X UDP schema handling across WSJT-X versions.
-* The `<<` / `>>` band-change ladder (currently a simple single-QSY stub).
+* **CQ button does not key the radio yet.** The bridge sends FreeText(send=1)
+  but nothing transmits. Suspects, in order: "Accept UDP requests" not
+  checked in WSJT-X / nothing bound on 127.0.0.1:2237 (`ss -lunp | grep
+  2237`); or wsjtx-improved 3.x validating the command source — the bridge
+  now sends controls from the same socket WSJT-X registered (heartbeat
+  reply), retest needed.
+* A real over-the-air QSO (tap decode → Reply → Auto Seq completion) —
+  untested; needs signals, not a dummy load.
+* Headless Pi boot validation and `flash.sh` from a release zip.
+
+No prebuilt release is published yet — that waits for the CQ/TX path and a
+real QSO (see `docs/RELEASE.md`).
 
 See `docs/` for build and field-deployment instructions.
 

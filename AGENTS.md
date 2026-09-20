@@ -13,10 +13,27 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   Validated on device: boot, PORTRAIT e-ink rendering (SSD1677), GT911 touch
   with correct rotation mapping, tap-flash feedback, page-button scrolling,
   and hold-power 1.5 s -> SLEEPING splash -> deep sleep with power-button wake.
-- **STILL UNVALIDATED on hardware:** Pi AP join + bridge link (device has only
-  ever shown NO-LINK), a completed real FT8 QSO, headless Pi boot,
-  `flash.sh` from a release zip. Do NOT tag a release until the checklist in
-  docs/RELEASE.md is green.
+- **2026-09 (Pi + QMX + X4 Pro field bring-up): MOSTLY WORKING.** Validated on
+  real hardware: WiFi AP join (needed WPA2-RSN pinning — ESP32 rejects
+  WPA/WPA2-TKIP mixed APs with reason 211), DHCP, stable TCP device link
+  (after the ArduinoJson framing fix), WSJT-X schema negotiation (bridge
+  answers heartbeats), wsjtx-improved 3.2 from SourceForge, latest hamlib
+  (/opt/hamlib, QMX model 2057), and **band change end-to-end**: X4 Pro
+  buttons -> bridge qsy -> rigctld -> QMX QSY with WSJT-X following via NET
+  rigctl. Battery % + NET DIAGNOSTIC screen work.
+- **STILL BROKEN / UNVALIDATED:**
+  * **CQ button does not key the radio.** Bridge sends FreeText(send=1) to
+    127.0.0.1:2237 and logs it; no TX. Suspects (check in this order):
+    (1) "Accept UDP requests" unchecked in WSJT-X / nothing on 2237
+    (`ss -lunp | grep 2237` must show wsjtx); (2) wsjtx-improved 3.x
+    validating the command source — bridge now sends controls from the rx
+    socket (the addr:port WSJT-X registered for client "xteink" via the
+    heartbeat reply); (3) verify reception by watching the Tx5 field when
+    tapping CQ. Per WSJT-X docs free_text send=true keys the radio directly
+    (Enable Tx not required; there is no UDP command for Enable Tx).
+  * Real over-the-air QSO (tap decode -> Reply -> Auto Seq) — needs signals.
+  * Headless Pi boot; `flash.sh` from a release zip. Do NOT tag a release
+    until docs/RELEASE.md is green.
 - Bridge: implemented + passing (16/16; Python, stdlib only).
 - Firmware: compiles clean; built current `firmware.bin` ~997 KB.
 - Docs are complete for operators (SETUP / FLASHING / PROTOCOL / RELEASE).
@@ -110,6 +127,14 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   3 (v3.x only APPENDS fields, e.g. `itone` in Status — `wsjtx_udp.py`
   `_parse_status` ignores trailing bytes, so the bridge is compatible), but
   3.x moved the INI to `~/.config/WSJT-X.ini` (see above).
+- **WSJT-X MessageServer client model** (verified against WSJT-X source):
+  clients are registered **by id string** (any inbound message registers;
+  Heartbeat negotiates the schema and gets a reply); incoming commands are
+  dispatched by id and (in 2.x) NOT source-port validated, but the bridge
+  nonetheless sends all controls from the **rx socket** — the addr:port WSJT-X
+  registered for id "xteink" — mirroring a real MessageClient and covering
+  stricter 3.x builds. Incoming command handling is gated by WSJT-X's
+  `accept_udp_requests` config ("Accept UDP requests" checkbox).
 - **WSJT-X schema negotiation is REQUIRED:** WSJT-X streams **schema 2** to a
   UDP client until that client answers a Heartbeat with its own Heartbeat
   declaring max_schema 3 (found on real hardware 2026: bridge logged

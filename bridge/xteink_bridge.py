@@ -244,8 +244,14 @@ class Bridge:
 
     # -- helpers ------------------------------------------------------------
     def _send_ctrl(self, packet):
+        # Send controls from the RX socket when possible: that is the exact
+        # addr:port WSJT-X registered for client "xteink" when we answered its
+        # heartbeat (same single-socket model a real MessageClient like JTAlert
+        # uses), so it is accepted even by WSJT-X builds that validate the
+        # source of incoming commands. _ctrl_sock is only a startup fallback.
+        sock = getattr(self, "_rx_sock", None) or self._ctrl_sock
         try:
-            self._ctrl_sock.sendto(packet, self._ctrl_addr)
+            sock.sendto(packet, self._ctrl_addr)
         except OSError as e:
             log.error("failed to send control to %s: %s", self._ctrl_addr, e)
 
