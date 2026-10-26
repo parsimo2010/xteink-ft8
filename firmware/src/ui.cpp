@@ -13,6 +13,10 @@ void Ui::pixel(uint16_t x, uint16_t y, bool black) {
       px = _pw - 1 - y;
       py = x;
       break;
+    case 3:  // landscape, panel mounted upside down
+      px = _pw - 1 - x;
+      py = _ph - 1 - y;
+      break;
     default:
       px = x;
       py = y;
@@ -38,6 +42,10 @@ bool Ui::pixelRead(uint16_t x, uint16_t y) const {
     case 2:
       px = _pw - 1 - y;
       py = x;
+      break;
+    case 3:
+      px = _pw - 1 - x;
+      py = _ph - 1 - y;
       break;
     default:
       px = x;

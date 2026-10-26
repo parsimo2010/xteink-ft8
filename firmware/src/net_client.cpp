@@ -7,13 +7,13 @@ void NetClient::begin() {
   WiFi.onEvent(
       [this](WiFiEvent_t event, WiFiEventInfo_t info) {
         _assoc_ok++;
-        Serial.printf("[net] associated (#%lu)\n", (unsigned long)_assoc_ok);
+        cfg::serial().printf("[net] associated (#%lu)\n", (unsigned long)_assoc_ok);
       },
       WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_CONNECTED);
   WiFi.onEvent(
       [this](WiFiEvent_t event, WiFiEventInfo_t info) {
         _last_err = info.wifi_sta_disconnected.reason;
-        Serial.printf("[net] disconnected, reason %u\n", _last_err);
+        cfg::serial().printf("[net] disconnected, reason %u\n", _last_err);
       },
       WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WiFi.begin(cfg::WIFI_SSID, cfg::WIFI_PASSWORD);
@@ -82,11 +82,11 @@ void NetClient::connect_tcp() {
   _tcp_tries++;
   if (!_client.connect(cfg::BRIDGE_HOST, cfg::BRIDGE_PORT)) {
     _tcp_fails++;
-    Serial.printf("[net] tcp %s:%u FAILED\n", cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
+    cfg::serial().printf("[net] tcp %s:%u FAILED\n", cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
     _client.stop();
     return;
   }
-  Serial.printf("[net] tcp %s:%u ok\n", cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
+  cfg::serial().printf("[net] tcp %s:%u ok\n", cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
   _connected = true;
   // Announce to the bridge.
   JsonDocument doc;

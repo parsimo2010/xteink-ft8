@@ -27,9 +27,9 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Build firmware
+      - name: Build firmware (X4 Pro + reTerminal Sticky)
         working-directory: firmware
-        run: pio run -e x4pro
+        run: pio run -e x4pro -e sticky
 
       - name: Run bridge tests
         working-directory: bridge
@@ -62,6 +62,36 @@ jobs:
           (cd dist/fw && zip -r ../xteink-ft8-firmware-${VER}.zip .)
           echo "asset=dist/xteink-ft8-firmware-${VER}.zip" >> "$GITHUB_OUTPUT"
 
+      - name: Package firmware (Sticky)
+        id: firmware_sticky
+        run: |
+          set -euo pipefail
+          VER="${{ github.ref_name }}"
+          pio=~/.platformio/packages
+          mkdir -p dist/fw-sticky
+          cp firmware/.pio/build/sticky/bootloader.bin dist/fw-sticky/
+          cp firmware/.pio/build/sticky/partitions.bin dist/fw-sticky/
+          cp "$pio/framework-arduinoespressif32/tools/partitions/boot_app0.bin" dist/fw-sticky/ 2>/dev/null || true
+          cp firmware/.pio/build/sticky/firmware.bin dist/fw-sticky/
+          cat > dist/fw-sticky/flash.sh <<'EOF'
+          #!/usr/bin/env bash
+          # Flash a Seeed reTerminal Sticky (env:sticky build).
+          # The USB-C port is a WCH CH343 bridge ("USB Single Serial"); it resets
+          # the ESP32-S3 into the ROM bootloader by itself -- no button to hold.
+          # Usage: flash.sh <PORT>   e.g. ./flash.sh /dev/ttyACM0  (Windows: COM3)
+          set -euo pipefail
+          PORT="${1:?usage: flash.sh <PORT>}"
+          esptool.py --chip esp32s3 --port "$PORT" --baud 460800 \
+            write_flash -z -fm dio -ff 80m -fs 32MB \
+            0x0      bootloader.bin \
+            0x8000   partitions.bin \
+            0xe000   boot_app0.bin \
+            0x10000  firmware.bin
+          EOF
+          chmod +x dist/fw-sticky/flash.sh
+          (cd dist/fw-sticky && zip -r ../xteink-ft8-firmware-sticky-${VER}.zip .)
+          echo "asset=dist/xteink-ft8-firmware-sticky-${VER}.zip" >> "$GITHUB_OUTPUT"
+
       - name: Package bridge
         id: bridge
         run: |
@@ -83,9 +113,13 @@ jobs:
 
             ## Assets
             * `xteink-ft8-firmware-<ver>.zip` — flash the X4 Pro (see docs/FLASHING.md)
+            * `xteink-ft8-firmware-sticky-<ver>.zip` — flash a Seeed reTerminal
+              Sticky (DIO / 32 MB; see the Sticky section of docs/FLASHING.md —
+              not yet validated on hardware)
             * `xteink-ft8-bridge-<ver>.zip` — Raspberry Pi bridge (see docs/SETUP.md)
 
             See docs/RELEASE.md for the validation checklist behind this release.
           files: |
             dist/xteink-ft8-firmware-${{ github.ref_name }}.zip
+            dist/xteink-ft8-firmware-sticky-${{ github.ref_name }}.zip
             dist/xteink-ft8-bridge-${{ github.ref_name }}.zip

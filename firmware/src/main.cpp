@@ -14,7 +14,9 @@
 using EPD = freeink::FreeInkDisplay;
 
 // ---------------------------------------------------------------------------
-// Hardware (Xteink X4 Pro)
+// Hardware. Device-specific values (pins, console serial, panel mounting) come
+// from cfg / BoardConfig::ACTIVE, so one source serves the Xteink X4 Pro and
+// the Seeed reTerminal Sticky builds.
 // ---------------------------------------------------------------------------
 EPD display(cfg::EPD_SCLK, cfg::EPD_MOSI, cfg::EPD_CS, cfg::EPD_DC, cfg::EPD_RST, cfg::EPD_BUSY);
 InputManager input;
@@ -81,7 +83,8 @@ int g_scanRssi = 0;
 int g_scanNets = -1;
 uint32_t g_lastScanMs = 0;
 
-// --- Battery (CW2017 gauge via the SDK BatteryMonitor) ----------------------
+// --- Battery (I2C gauge via the SDK BatteryMonitor: CW2017 on the X4 Pro,
+//     BQ27220 on the Sticky; the backend follows the active board profile) ---
 BatteryMonitor g_battery;
 uint16_t g_battPct = 0xFFFF;      // 0xFFFF = not known yet
 uint32_t g_lastBattMs = 0;
@@ -105,6 +108,7 @@ void handle_msg(const JsonDocument& doc);
 void on_tap(int xPx, int yPx);
 void send_reply(const Decode& d);
 void send_cmd_qsy(int dir);
+void send_get_decodes();
 void send_halt();
 void send_cq();
 void maybe_enter_sleep();
@@ -254,6 +258,12 @@ void send_cq() {
   net.send(std::move(cmd));
 }
 
+void send_get_decodes() {
+  JsonDocument c;
+  set_cmd(c, "get_decodes");
+  net.send(std::move(c));
+}
+
 void send_halt() {
   JsonDocument cmd;
   set_cmd(cmd, "halt_tx");
@@ -327,12 +337,7 @@ void on_tap(int xPx, int yPx) {
       case 0: send_cq(); break;
       case 1: send_cmd_qsy(-1); break;
       case 2: send_cmd_qsy(1); break;
-      case 3: {
-        JsonDocument c;
-        set_cmd(c, "get_decodes");
-        net.send(std::move(c));
-        break;
-      }
+      case 3: send_get_decodes(); break;
       case 4: send_halt(); break;
     }
     g_dirty = true;
@@ -354,6 +359,25 @@ void on_tap(int xPx, int yPx) {
   }
 }
 
+// The Sticky is kept alive by a power latch (PWR_HOLD GPIO45 + PWR_LOCK GPIO46,
+// asserted by BoardConfig::holdPowerRails()). Deep sleep isolates GPIOs, so latch
+// those levels through the sleep: floating them can drop the rail and the EXT1
+// wake on the shared AI/power key (GPIO4) can then never fire. Seeed's own demo
+// and the ESPHome port do the same. The X4 Pro's latch0 (GPIO1) is a peripheral
+// rail enable rather than a latch, and its sleep path is hardware-validated as
+// is, so it is deliberately left alone.
+static void latchPowerRailsForSleep() {
+#if FREEINK_DEVICE_STICKY
+  for (const int8_t pin : {BoardConfig::ACTIVE.power.latch0, BoardConfig::ACTIVE.power.latch1}) {
+    if (pin < 0) continue;
+    gpio_hold_dis(static_cast<gpio_num_t>(pin));
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, HIGH);
+    gpio_hold_en(static_cast<gpio_num_t>(pin));
+  }
+#endif
+}
+
 // ===========================================================================
 // Power: hold the power button -> panel + chip deep sleep.
 // The e-ink image persists without power; any power-button press wakes the
@@ -369,9 +393,10 @@ void maybe_enter_sleep() {
   if (input.getPowerButtonHeldTime() < cfg::POWER_HOLD_SLEEP_MS) return;
 
   render_sleep();
-  Serial.flush();
+  cfg::serial().flush();
   display.deepSleep();
   freeink::PowerManager::powerDownRailsForSleep();
+  latchPowerRailsForSleep();
   freeink::PowerManager::deepSleepUntilPowerButton();  // noreturn
 }
 
@@ -502,6 +527,8 @@ void render_net_diag() {
   char b[88];
   ui.textLarge(x, y, "NET DIAGNOSTIC", true);
   y += Ui::LARGE_H + 16;
+  snprintf(b, sizeof(b), "DEV   %s rot %d", cfg::DEVICE_NAME, cfg::UI_ROTATION);
+  ui.text(x, y, b, true); y += 22;
   snprintf(b, sizeof(b), "SSID  %s", cfg::WIFI_SSID);
   ui.text(x, y, b, true); y += 22;
   snprintf(b, sizeof(b), "WIFI  %u %s", g_status.wifiStatus, wifi_status_text(g_status.wifiStatus));
@@ -579,24 +606,36 @@ void render_sleep() {
 // ===========================================================================
 void setup() {
   delay(250);
-  Serial.begin(115200);
+  cfg::serial().begin(115200);
   delay(50);
 
   BoardConfig::holdPowerRails();
+
+  // A switched microSD rail that a previous sleep latched off clamps the panel's
+  // SPI bus on boards where the card shares it (Sticky: SD and EPD both ride
+  // SCLK13/MOSI14), so bring the rail back up before touching the panel.
+  if (BoardConfig::ACTIVE.sd.powerEnable >= 0 &&
+      BoardConfig::ACTIVE.sd.sclk == BoardConfig::ACTIVE.display.sclk) {
+    BoardConfig::releaseSdRail();
+  }
+
   freeink::applyXteinkDisplayController();
 
   display.begin();
   display.clearScreen();
   display.displayBuffer(EPD::FULL_REFRESH);  // initial full refresh
 
-  const bool portrait = cfg::UI_ROTATION != 0;
+  const bool portrait = cfg::UI_PORTRAIT;
   g_lw = portrait ? (int)display.getDisplayHeight() : (int)display.getDisplayWidth();
   g_lh = portrait ? (int)display.getDisplayWidth() : (int)display.getDisplayHeight();
   g_visRows = (contentH() - cfg::STATUS_H - cfg::ACTION_H) / cfg::ROW_H;
 
   input.begin();
   net.begin();
-  Serial.printf("[net] joining SSID '%s', bridge %s:%u\n",
+  cfg::serial().printf("[boot] %s (freeink '%s'), %ux%u logical, rotation %d\n",
+                       cfg::DEVICE_NAME, BoardConfig::ACTIVE.name,
+                       (unsigned)g_lw, (unsigned)g_lh, cfg::UI_ROTATION);
+  cfg::serial().printf("[net] joining SSID '%s', bridge %s:%u\n",
                 cfg::WIFI_SSID, cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
   g_dirty = true;
 }
@@ -611,7 +650,7 @@ void loop() {
   // Link indicator follows the TCP state (cleared on drop, set on reconnect).
   if (g_status.link != net.connected()) {
     g_status.link = net.connected();
-    Serial.printf("[net] bridge link %s\n", g_status.link ? "UP" : "DOWN");
+    cfg::serial().printf("[net] bridge link %s\n", g_status.link ? "UP" : "DOWN");
     if (g_status.link) g_everLinked = true;
     g_dirty = true;
   }
@@ -625,7 +664,7 @@ void loop() {
   }
   const uint8_t wsNow = net.wifi_status();
   if (g_status.wifiStatus != wsNow) {
-    Serial.printf("[net] wifi status %u -> %u\n", g_status.wifiStatus, wsNow);
+    cfg::serial().printf("[net] wifi status %u -> %u\n", g_status.wifiStatus, wsNow);
     g_status.wifiStatus = wsNow;
     g_dirty = true;
   }
@@ -640,7 +679,7 @@ void loop() {
     String ip = net.wifi_ip();
     if (ip.length() < sizeof(g_status.ip) && strcmp(ip.c_str(), g_status.ip) != 0) {
       strlcpy(g_status.ip, ip.c_str(), sizeof(g_status.ip));
-      Serial.printf("[net] wifi ip %s\n", g_status.ip);
+      cfg::serial().printf("[net] wifi ip %s\n", g_status.ip);
       g_dirty = true;
     }
   } else if (g_status.ip[0] != '\0') {
@@ -656,7 +695,7 @@ void loop() {
     uint16_t pct;
     if (g_battery.readPercentageChecked(pct) && pct != g_battPct) {
       g_battPct = pct;
-      Serial.printf("[bat] %u%%\n", (unsigned)pct);
+      cfg::serial().printf("[bat] %u%%\n", (unsigned)pct);
       g_dirty = true;
     }
   }
@@ -697,6 +736,19 @@ void loop() {
     }
   }
 
+  // The Sticky's AI key is shared with the power key: a short press arrives as
+  // BTN_CONFIRM (a hold is BTN_POWER, see cfg::POWER_HOLD_SLEEP_MS). Use the
+  // click as Back when a detail screen is up, otherwise as a re-fetch. Inert on
+  // the X4 Pro, which has no confirm pin.
+  if (input.wasPressed(InputManager::BTN_CONFIRM)) {
+    if (g_screen == Screen::QsoDetail) {
+      g_screen = Screen::List;
+    } else {
+      send_get_decodes();
+    }
+    g_dirty = true;
+  }
+
   // Touch taps: the SDK reports normalized coords in the panel-native
   // landscape frame; undo the UI rotation to get logical coords.
   float nx, ny;
@@ -708,6 +760,9 @@ void loop() {
     } else if (cfg::UI_ROTATION == 2) {    // portrait, inverted
       lx = (int)(ny * (g_lw - 1));
       ly = (int)((1.0f - nx) * (g_lh - 1));
+    } else if (cfg::UI_ROTATION == 3) {    // landscape, panel mounted 180 deg
+      lx = (int)((1.0f - nx) * (g_lw - 1));
+      ly = (int)((1.0f - ny) * (g_lh - 1));
     } else {
       lx = (int)(nx * (g_lw - 1));
       ly = (int)(ny * (g_lh - 1));

@@ -8,8 +8,14 @@
 
 class Ui {
  public:
-  // rotation: 0 = none, 1 = portrait 90 deg CW, 2 = portrait 90 deg CCW.
-  // Logical size must be (physW x physH) for rotation 0, else (physH x physW).
+  // Rotation codes accepted by setTarget().
+  static constexpr int ROT_NONE = 0;
+  static constexpr int ROT_PORTRAIT_CW = 1;
+  static constexpr int ROT_PORTRAIT_CCW = 2;
+  static constexpr int ROT_LANDSCAPE_180 = 3;
+  // rotation: 0 = none, 1 = portrait 90 deg CW, 2 = portrait 90 deg CCW,
+  //           3 = landscape turned 180 deg (upside-down panel mounting).
+  // Logical size must be (physH x physW) for rotations 1/2, else (physW x physH).
   void setTarget(uint8_t* fb, uint16_t logW, uint16_t logH,
                  uint16_t physW, uint16_t physH, int rotation) {
     _fb = fb;
