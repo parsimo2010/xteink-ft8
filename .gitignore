@@ -20,3 +20,5 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+# Packaging output (release workflow / local repackaging)
+dist/

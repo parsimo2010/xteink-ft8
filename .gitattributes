@@ -1,0 +1,28 @@
+# Normalize line endings in the index (all LF) and, more importantly, keep the
+# files that RUN ON THE RASPBERRY PI byte-exact: a shell script or systemd unit
+# checked out with CRLF fails on Linux ("$'\r': command not found", or
+# systemd's "EXEC spawn" error), and this repo is often cloned on Windows.
+* text=auto
+
+# Pi-side scripts and units: always LF, on every platform.
+*.sh text eol=lf
+*.service text eol=lf
+*.default text eol=lf
+
+# Source + docs: normalize to LF in the index, native on checkout.
+*.py text
+*.c text
+*.cpp text
+*.h text
+*.ini text
+*.csv text
+*.md text
+*.yml text
+*.json text
+
+# Flash images and blobs must never be rewritten.
+*.bin binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.pdf binary

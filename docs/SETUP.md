@@ -17,8 +17,9 @@ access point, WSJT-X, and the bridge.
   "Bookworm" or newer)**.
 * A USB sound interface / interface cable for your transceiver (this is the
   usual FT8 audio + rig-control setup).
-* An **Xteink X4 Pro** e-ink reader.
-* A computer (Windows/Linux/macOS) with a USB cable to build & flash the X4 Pro
+* An e-ink reader running this firmware — an **Xteink X4 Pro** or a
+  **Seeed reTerminal Sticky**. The bridge and this setup are identical for both.
+* A computer (Windows/Linux/macOS) with a USB cable to build & flash the device
   firmware once.
 
 **Software (installed below)**
@@ -195,15 +196,16 @@ The bridge logs `bridge ready: rx=127.0.0.1:2238 ... device=0.0.0.0:4510`.
 ## 6. First run (field)
 
 1. Power the Pi. It boots the AP + WSJT-X + bridge automatically (~1–2 min).
-2. Power the X4 Pro. It joins the AP and connects to `192.168.4.1:4510`.
+2. Power the device. It joins the AP and connects to `192.168.4.1:4510`.
    Until the first successful link it shows a **NET DIAGNOSTIC** screen: SSID,
    WiFi status code, whether its own scan sees the AP (with RSSI), its DHCP IP,
    and TCP try/fail counts — then it auto-switches to decodes. Afterwards the
    status bar shows: **NO-SSID**/**NO-WIFI** (not associated), **`192.168.4.x`
    NO-LINK** (on WiFi, bridge unreachable), or no tag (link up).
-3. The X4 Pro fills with CQ decodes after the first decode cycle.
+3. The device fills with CQ decodes after the first decode cycle.
 4. Tap a CQ to answer it; WSJT-X drives the QSO to completion. Use the bottom
-   bar for **CQ / band << >> / re-fetch / Halt**.
+   bar for **CQ / band << >> / re-fetch / Halt** (on the Sticky a short press of
+  the AI key also re-fetches).
 
 ---
 

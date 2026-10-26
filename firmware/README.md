@@ -1,8 +1,13 @@
-# xteink-ft8 firmware (Xteink X4 Pro)
+# xteink-ft8 firmware (Xteink X4 Pro + Seeed reTerminal Sticky)
 
-FT8 field UI for the Xteink X4 Pro (ESP32-S3 e-ink reader). Built on the
-**FreeInk SDK** (the same display/input stack used by CrossPoint), vendored as a
-git submodule at `freeink-sdk/`.
+FT8 field UI for ESP32-S3 e-ink readers. Built on the **FreeInk SDK** (the same
+display/input stack used by CrossPoint), vendored as a git submodule at
+`freeink-sdk/`. One source tree, two build envs:
+
+| env | device | panel / touch | buttons | battery gauge | console |
+|-----|--------|---------------|---------|---------------|---------|
+| `x4pro` | Xteink X4 Pro | SSD1677 800x480, **portrait UI**, GT911 (shared I2C bus) | UP0 DOWN7 PWR3 | CW2017 @0x63 | native USB CDC |
+| `sticky` | Seeed reTerminal Sticky | SSD1677 800x480, **landscape UI** (glass mounted 180°), GT911 (own I2C bus) | UP5 DOWN6 + shared AI/OK/PWR4 | BQ27220 @0x55 (`Wire1`) | UART0 → CH343 on USB-C |
 
 ## Prereqs
 
@@ -16,10 +21,17 @@ git submodule at `freeink-sdk/`.
 ## Build & flash
 
 ```bash
-pio run -e x4pro             # compile
-pio run -e x4pro -t upload   # flash over USB (put the X4 Pro in download mode first)
-pio device monitor           # serial logs (optional)
+pio run                    # compile both targets
+pio run -e x4pro           # compile one target
+pio run -e x4pro -t upload # flash over USB (put the X4 Pro in download mode first)
+pio device monitor         # serial logs (optional)
+
+pio run -e sticky -t upload --upload-port <port>   # Sticky: the CH343 "USB Single Serial" port
 ```
+
+The Sticky needs no download-mode dance (its CH343 bridge auto-resets the S3)
+and is flashed **DIO / 32 MB**; see `../docs/FLASHING.md`. Always pass `-e <env>`
+for uploads — a bare `pio run -t upload` would try both boards in turn.
 
 > **Entering download mode:** hold the left/up nav button (GPIO0) while
 > pressing reset / power-cycling. See **`../docs/FLASHING.md`** for full
@@ -56,11 +68,39 @@ Edit `include/config.h`:
   decodes), **Halt** (stop TX). In the QSO detail view: **Back / Halt**.
 * The nav buttons (Up/Down) scroll the list.
 
-## Notes / prototype status
+## Sticky specifics
 
-* The X4 Pro hardware profile in the FreeInk SDK is mostly hardware-confirmed;
-  a few items (frontlight GPIO mapping, some orientation details) are still
-  pending validation. If the panel doesn't come up, check the EPD pins in
-  `config.h` against your unit.
-* The firmware has not yet been run on hardware. Expect UI/metrics tuning on
-  the real 800x480 panel.
+* Landscape UI: `UI_ROTATION = 3` (the glass is mounted 180° from the panel's
+  native scan, which is what Seeed's own display layer does). Override per
+  build with `-DXTEINK_UI_ROTATION=0..3` if a unit disagrees.
+* Three buttons, not three independent ones: UP/DOWN scroll, and the **AI key
+  (GPIO4) is shared** with the power key — the FreeInk `InputManager` reports a
+  click as `BTN_CONFIRM` (re-fetch decodes, or Back from the QSO screen) and a
+  hold as `BTN_POWER` (1.5 s → deep sleep). Wake is EXT1 on the same pin.
+* The board is held on by a power latch (PWR_HOLD 45 / PWR_LOCK 46); it is
+  asserted at boot via `BoardConfig::holdPowerRails()` and latched through deep
+  sleep so the wake pin stays live.
+* Battery % comes from a BQ27220 gauge on `Wire1` (the touch owns `Wire`);
+  `BatteryMonitor` picks the backend from the board profile.
+* The microSD card shares the panel's SPI bus, so `setup()` re-powers that rail
+  (`BoardConfig::releaseSdRail()`) before touching the display — a rail a
+  previous sleep latched off would clamp SCLK/MOSI.
+* The PDM mic, buzzer, RTC, SHT40 and IMU are on this board but unused here, so
+  their SDK libraries are not in `lib_deps`.
+
+## Hardware status
+
+* **X4 Pro (`x4pro`): validated on real hardware** (2026-09-12 bring-up).
+  Portrait e-ink rendering on the SSD1677, GT911 touch with the correct
+  rotation mapping, tap-flash feedback, page-button scrolling and hold-power
+  deep sleep with power-button wake all work. The X4 Pro profile in the FreeInk
+  SDK is hardware-confirmed for everything this app uses.
+* **Sticky (`sticky`): compiles clean, never flashed.** Treat the first session
+  as bring-up: see "Sticky specifics" above and the Sticky section of
+  `../docs/FLASHING.md` for the ordered checklist.
+
+> **The `cfg::EPD_*` constants are documentation, not the source of truth.**
+> `FreeInkDisplay::begin()` re-derives the panel pins from the active
+> `BoardConfig` profile (`FREEINK_DEVICE_X4PRO` / `FREEINK_DEVICE_STICKY`), so
+> if a panel does not paint the fix is the device flag / SDK profile, not
+> `config.h`.

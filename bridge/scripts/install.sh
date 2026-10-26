@@ -2,7 +2,7 @@
 # Install xteink-ft8 autostart on the Raspberry Pi:
 #   * bridge systemd service
 #   * WSJT-X headless autostart (Xvfb virtual display)
-#   * rigctld (band control for the X4 Pro << / >> buttons; QRP Labs QMX/QMX+
+#   * rigctld (band control for the device's << / >> buttons; QRP Labs QMX/QMX+
 #     auto-detected, no extra setup)
 #   * latest wsjtx-improved + latest hamlib (if the network allows)
 # Run once at home with sudo. After this, field boots start everything with no
@@ -83,7 +83,7 @@ sed -i "s|%h|$USER_HOME|" /etc/systemd/system/xteink-wsjtx.service
 sed -i "s|^User=.*|User=$USER_PI|" /etc/systemd/system/xteink-wsjtx.service
 
 # Install and enable rigctld (shared by WSJT-X and the bridge; this is what
-# makes the X4 Pro band buttons work with the QMX/QMX+ by default).
+# makes the device's band buttons work with the QMX/QMX+ by default).
 install -m 644 "$SCRIPTS/xteink-rigctld.service" /etc/systemd/system/
 sed -i "s|%h|$USER_HOME|" /etc/systemd/system/xteink-rigctld.service
 sed -i "s|^User=.*|User=$USER_PI|" /etc/systemd/system/xteink-rigctld.service
@@ -98,7 +98,7 @@ mkdir -p "$USER_HOME/.cache"
 chown "$USER_PI":"$USER_PI" "$USER_HOME/.cache"
 
 echo "Installed. Services start on boot:"
-echo "  * xteink-bridge.service  (the WSJT-X -> X4 Pro relay)"
+echo "  * xteink-bridge.service  (the WSJT-X -> e-ink device relay)"
 echo "  * xteink-wsjtx.service   (WSJT-X on a virtual display)"
 echo "  * xteink-rigctld.service (band control; QMX/QMX+ auto-detected on USB)"
 echo ""
@@ -116,7 +116,8 @@ echo "     Optionally preseed call/grid/UDP keys with WSJT-X CLOSED:"
 echo "       WSJTXCALL=W9XYZ WSJTXGRID=EM48 $SCRIPTS/preseed_wsjtx.sh  (as $USER_PI)"
 echo "     To use direct serial CAT instead, disable the shared rigctld first:"
 echo "       sudo systemctl disable --now xteink-rigctld   (band buttons stop working)"
-echo "  3. Edit firmware/include/config.h (SSID/pass/bridge IP) and flash the X4 Pro."
+echo "  3. Edit firmware/include/config.h (SSID/pass/bridge IP) and flash the device"
+echo "     (pio run -e x4pro / -e sticky; see docs/FLASHING.md)."
 echo ""
-echo "Field boot: power on the Pi, wait ~1-2 min, power on the X4 Pro. No"
+echo "Field boot: power on the Pi, wait ~1-2 min, power on the device. No"
 echo "keyboard/mouse/screen needed."

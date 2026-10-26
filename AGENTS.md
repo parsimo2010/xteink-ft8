@@ -35,8 +35,40 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   * Headless Pi boot; `flash.sh` from a release zip. Do NOT tag a release
     until docs/RELEASE.md is green.
 - Bridge: implemented + passing (16/16; Python, stdlib only).
-- Firmware: compiles clean; built current `firmware.bin` ~997 KB.
+- Firmware: compiles clean; built current `firmware.bin` ~1.0 MB.
+- **2026-10: second build target `env:sticky` added** for the **Seeed reTerminal
+  Sticky** (ESP32-S3R8, 3.97" 800x480 SSD1677 + GT911). **Compiles clean, NOT
+  yet flashed on hardware.** FreeInk already shipped a validated `STICKY`
+  board profile in-tree, so this was mostly wiring up the env + removing the
+  X4-Pro-only assumptions. See "Sticky target" below.
 - Docs are complete for operators (SETUP / FLASHING / PROTOCOL / RELEASE).
+- **2026-10-25 repo review pass (docs + hygiene only, no code behavior
+  changed):** README / firmware+bridge README / SETUP / FLASHING / PROTOCOL /
+  RELEASE were still single-target (X4 Pro) and partly stale — they said the
+  firmware had "never been run on hardware" and quoted 14/14 bridge tests.
+  Now: both targets documented everywhere, Supported-devices table in README,
+  `config.h` EPD pins explicitly labelled decorative vs the authoritative
+  `BoardConfig` profile, Sticky first-boot guidance in FLASHING.md + its
+  RELEASE checklist. Deleted a stray empty `package-lock.json`, added the
+  missing trailing newline to `release.yml`, and reworded X4-Pro-only text in
+  the Pi scripts' echo lines. Verified: `pio run` builds `x4pro` + `sticky`
+  clean, `test_bridge.py` 16/16, `bash -n` on all scripts, submodule pin
+  `e70baa2` is on the SDK's `origin/main` (so a fresh clone resolves).
+- **Deferred code findings from that review** (real, but every one of them
+  touches the field-working path and needs a bench/hardware check — do NOT
+  "fix" blind):
+  * `rigctl.set_frequency()` ignores rigctld's `RPRT <code>` reply, so a
+    rejected QSY still reports `ok_dispatch` to the device. Documented as a
+    known limitation in `docs/PROTOCOL.md`.
+  * `device_server.py` can call `conn.sendall()` from two threads on one socket
+    (command response + WSJT-X-driven `broadcast`); a partial write would
+    interleave frames. Self-healing (the firmware drops + reconnects on a
+    framing error) but wants a per-connection send lock.
+  * `NetClient::update()` flushes the TX queue with `_client.print(out)`, which
+    tolerates a short write — same failure mode on the device side.
+  * Firmware sorts pushed `decode` rows by SNR but ingests `decodes`/`hello`
+    snapshots in bridge order, so the list can be unsorted right after link-up.
+  * `main.cpp` forward-declares `maybe_enter_sleep()` twice (harmless).
 
 ## Key architectural facts (do not "relearn" these)
 
@@ -61,10 +93,13 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
 - **Callsign source of truth = WSJT-X** (bridge reads `de_call`/`de_grid` from
   Status). Firmware `send_cq()` uses the WSJT-X-sourced call, falling back to
   `cfg::MY_CALL`/`MY_GRID` only until the first Status/hello.
-- **UI is PORTRAIT (480x800 logical)** via a per-pixel software transpose in
-  `ui.cpp` (the panel RAM is landscape-only; 90° is NOT expressible in the
-  SSD1677/UC8179/UC8279 controller). Rotating/touch-mapping is a one-constant
-  change: `cfg::UI_ROTATION` in `config.h` (1 = portrait CW, 2 = 180° flip).
+- **UI orientation is per-target** (X4 Pro = PORTRAIT 480x800, Sticky =
+  LANDSCAPE 800x480 rotated 180°) via a per-pixel software transform in
+  `ui.cpp` (the panel RAM is landscape-native; rotation is NOT expressible in
+  the SSD1677/UC8179/UC8279 controller). It stays a one-constant change:
+  `cfg::UI_ROTATION` in `config.h` — 0 = landscape native, 1 = portrait CW,
+  2 = portrait CCW, **3 = landscape 180° (added for the Sticky)**. Drawing and
+  the touch-tap mapping both key off that one constant.
   Font = 5x7 upscaled to 8x11 per glyph. Taps flash the control inverted for
   `TAP_FLASH_MS` as feedback (works with no link, so touch can be verified
   before the Pi exists). NOTE: the SDK's `begin()` re-derives EPD pins from the
@@ -188,17 +223,81 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   derived from the dial frequency; the firmware band buttons walk a ladder
   (160m..6m) matching `rigctl.BAND_CENTERS`.
 
+## Sticky target (Seeed reTerminal Sticky) — what differs from the X4 Pro
+
+Device-specific values are isolated in `include/config.h` keyed off
+`FREEINK_DEVICE_STICKY`; `main.cpp`/`ui.cpp` are device-neutral (the only
+compiled-out X4-Pro-specific bit is the sleep latch hold).
+
+- **Panel:** SSD1677 800x480, SCLK13 MOSI14 CS15 DC16 RST17 BUSY18 + panel
+  power-enable 47 (all taken from the FreeInk `STICKY` profile, which matches
+  Seeed's hardware overview and the vendor demo pin-for-pin).
+- **Landscape UI.** The card is 106x65.5 mm and Seeed's own display layer
+  rotates 180°, so Sticky builds default to `UI_ROTATION = 3` (landscape + 180,
+  a mode added to `Ui` for this target) while the X4 Pro stays `1` (portrait).
+  Tune without editing code: `PLATFORMIO_BUILD_FLAGS=-DXTEINK_UI_ROTATION=0..3`
+  (`pio run` has no `--build-flag` option; the env var DOES append to env flags).
+  The NET DIAGNOSTIC screen prints `DEV sticky rot 3` so orientation is
+  verifiable with no serial cable.
+- **Console is UART0, not USB CDC.** The Sticky's USB-C is a WCH CH343 bridge
+  (`1a86:55d3`, port name "USB Single Serial") on GPIO43/44; native USB D+/D-
+  (GPIO19/20) are wired to the PDM mic instead. All logging therefore goes
+  through `cfg::serial()` = `BoardConfig::serialTransport()` (Serial0 on the
+  Sticky, `Serial` on the X4 Pro). Never use bare `Serial` in this codebase.
+- **Buttons: 3, but the third is shared.** UP=GPIO5, DOWN=GPIO6 scroll; the
+  AI/OK/PWR key is GPIO4 for both confirm and power
+  (`InputStyle::DigitalConfirmPowerHold`): a click surfaces as `BTN_CONFIRM`
+  (we map it to re-fetch decodes / Back), a hold past the SDK's internal
+  400 ms surfaces as `BTN_POWER`, so `POWER_HOLD_SLEEP_MS = 1500` still sleeps
+  it. GPIO4 is also the EXT1 wake pin. There is no capacitive Home key.
+- **Power latch must survive sleep.** PWR_HOLD 45 + PWR_LOCK 46 hold a 74AHC1G79
+  that keeps the board on; `latchPowerRailsForSleep()` in main.cpp gpio-holds
+  them HIGH before `deepSleepUntilPowerButton()` (Sticky-only — the X4 Pro's
+  latch0 is a rail enable and its sleep path is already hardware-validated).
+- **microSD shares the panel's SPI bus** (CS8, MISO12, card power EN10). A rail
+  a previous sleep latched off clamps SCLK/MOSI, so `setup()` calls
+  `BoardConfig::releaseSdRail()` when `sd.sclk == display.sclk` (true on the
+  Sticky, false on the X4 Pro — no behavior change there).
+- **Battery:** BQ27220 @0x55 on the sensor bus SDA1/SCL0 served on **Wire1**
+  (the GT911 owns `Wire` on SDA3/SCL2); the X4 Pro uses a CW2017 @0x63 on the
+  shared touch bus. `BatteryMonitor`'s default ctor dispatches on the profile,
+  so nothing in the app changes.
+- **Unused Sticky silicon** (PDM mic, buzzer GPIO48, PCF8563, SHT40, LSM6DS3):
+  their SDK caps auto-enable for the device but the libraries are NOT in
+  `lib_deps`, so no code is pulled in and no pins are touched.
+
 ## Build & test commands
 
 - Bridge tests: `cd bridge && python test_bridge.py` (expect 16/16 pass).
-- Firmware build: `cd firmware && py -3.12 -m platformio run -e x4pro`
-- Firmware flash: `py -3.12 -m platformio run -e x4pro -t upload`
-- **PlatformIO is installed under Python 3.12 only** (`py -3.12 -m platformio`).
-  The Arduino-ESP32 toolchain **rejects Python 3.14** (system default).
+- Firmware build: `cd firmware && ~/.platformio/penv/Scripts/pio.exe run -e x4pro`
+  (or `-e sticky`, or bare `pio run` for both — `default_envs = x4pro, sticky`).
+- Firmware flash: `pio run -e x4pro -t upload` / `pio run -e sticky -t upload --upload-port <COM>`
+- **Python situation on this box (rechecked 2026-10):** there is **no `py -3.12`
+  any more** — the only system Python is 3.14, which the pioarduino platform
+  rejects outright ("Python version must be 3.10–3.13"). The working
+  interpreter + PlatformIO is the installer's venv:
+  **`%USERPROFILE%\.platformio\penv\Scripts\pio.exe`** (Python 3.12.10). Use it
+  for builds and for `-m esptool`.
 - PlatformIO/toolchain lives in `%USERPROFILE%\.platformio`. Build artifacts in
   `firmware/.pio/build/x4pro/` (bootloader.bin, partitions.bin, firmware.bin).
 - Flash offsets (verified): bootloader `0x0`, partitions `0x8000`, boot_app0
-  `0xe000`, app `0x10000`. Release workflow uses these.
+  `0xe000`, app `0x10000`. Release workflow uses these (same for both targets —
+  `partitions.csv` is shared and spans the first 16 MB).
+- **pioarduino flash-size/flash-mode gotchas** (learned while adding the Sticky
+  target): the image header's flash size comes from the board manifest key
+  `upload.flash_size`, so override it with **`board_upload.flash_size`** —
+  `board_build.flash_size` does NOT reach `esptool elf2image` (the sticky env
+  silently built an 8 MB image until this was fixed). And `_get_board_flash_mode()`
+  in the platform **maps qio/qout → dio** anyway (opi memory types → dout), so
+  every image here is DIO; the Sticky wants DIO @ 80 MHz / 32 MB, which is what
+  Seeed's demos and the community firmware use for its 32 MB QSPI part.
+- **esptool v5:** `--flash-mode/-fm`, `-ff`, `-fs` are options of the
+  `write-flash` subcommand, NOT global options (global placement = "No such
+  option"), and `write_flash`/`read-flash` spellings are mixed-deprecated. The
+  sticky env uses `board = esp32-s3-devkitc-1` (no PSRAM declared — FreeInk
+  keeps the 48 KB framebuffer in internal DRAM for this device) with
+  `upload_speed = 460800`; the CH343 bridge auto-enters the bootloader, so there
+  is no download-mode button on this device.
 - **Download mode on the X4 Pro:** hold the LEFT/up page button (GPIO0) while
   plugging USB-C, ~3 s, then release. Screen stays blank (e-ink holds the last
   frame — that is normal, NOT a hang). Windows enumerates it as a COM port.
@@ -220,6 +319,13 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
 - `git` config user = parsimo2010. Repo uses CRLF warnings (cosmetic, no LF attr).
 - `gh` authenticated as parsimo2010.
 
+## Operator-facing docs — keep in sync when a target changes
+
+README (both-target table), `firmware/README.md`, `docs/FLASHING.md` (per-device
+section + troubleshooting), `docs/SETUP.md`, `docs/PROTOCOL.md`,
+`docs/RELEASE.md` (checklist + the test count CI reports). A new build target is
+not "done" until these mention it and its validation status.
+
 ## When hardware arrives — validation checklist (from docs/RELEASE.md)
 
 1. ✅ DONE (2026-09-12) Firmware boots on real X4 Pro; portrait e-ink + GT911
@@ -228,6 +334,13 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
 3. ⬜ CQ decodes appear; tapping completes a QSO with WSJT-X (Auto Seq on).
 4. ⬜ Headless Pi boot brings up AP + WSJT-X + bridge.
 5. ⬜ `flash.sh` works from a fresh download.
+6. ⬜ **Sticky (`env:sticky`) on real hardware** — builds clean but never
+   flashed. Check in this order: does the panel paint at all (SSD1677 + EN47),
+   is it upside down (`DEV sticky rot 3` on the NET DIAGNOSTIC screen; try
+   `-DXTEINK_UI_ROTATION=0`), do touch taps land under the finger (the digitizer
+   mapping is in the FreeInk `STICKY` profile, not our code), UP/DOWN scroll,
+   AI-click re-fetch, 1.5 s AI-hold → SLEEPING → power-button wake (the power
+   latch is the thing to suspect if it will not wake), battery % from BQ27220.
 
 Still to exercise on hardware: the Pi/AP link and a real QSO end-to-end, and
 WSJT-X UDP schema across versions. EPD pins, UI metrics, and touch orientation
@@ -236,8 +349,10 @@ are now validated and should NOT need re-tuning.
 ## Release process (only AFTER validation)
 
 `git tag v0.1.0 && git push origin v0.1.0` → `.github/workflows/release.yml`
-builds `firmware-<ver>.zip` + `bridge-<ver>.zip` and attaches them to a GitHub
-Release. Keep `docs/RELEASE.md` checklist up to date.
+builds `firmware-<ver>.zip` (x4pro) + `firmware-sticky-<ver>.zip` (sticky) +
+`bridge-<ver>.zip` and attaches them to a GitHub Release. Keep `docs/RELEASE.md`
+checklist up to date. The sticky zip's `flash.sh` differs from the X4 Pro one:
+it adds `-fm dio -ff 80m -fs 32MB` and assumes the CH343 auto-resets the chip.
 
 ## Style / conventions
 

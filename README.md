@@ -1,7 +1,8 @@
 # xteink-ft8
 
 Field FT8 operation from the pocket: a WSJT-X bridge on a Raspberry Pi + a
-handheld "go-box" UI on an **Xteink X4 Pro** e-ink reader.
+handheld "go-box" UI on an e-ink reader — an **Xteink X4 Pro** or a
+**Seeed reTerminal Sticky**.
 
 ```
   [Transceiver]  <--CAT-->  [Raspberry Pi]
@@ -10,14 +11,14 @@ handheld "go-box" UI on an **Xteink X4 Pro** e-ink reader.
                                 |
                            WiFi AP (ad-hoc, no internet needed)
                                 |
-                          [Xteink X4 Pro]  (ESP32-S3 e-ink, touch)
+                          [Xteink X4 Pro | reTerminal Sticky]  (ESP32-S3 e-ink, touch)
 ```
 
 You run WSJT-X with a connected radio in the field. The bridge listens to
 WSJT-X's UDP messages, filters the FT8 **CQ** decodes, and relays them to the
-X4 Pro over the Pi's own WiFi network. Tap a CQ on the e-ink screen to answer
-it, send CQs yourself, change band, or halt TX — everything WSJT-X needs to
-complete the contact is driven from your wrist.
+e-ink device over the Pi's own WiFi network. Tap a CQ on the e-ink screen to
+answer it, send CQs yourself, change band, or halt TX — everything WSJT-X needs
+to complete the contact is driven from the device in your pocket.
 
 No internet access point is required: the Pi creates its own WiFi network, so
 this works from a mountain top or a park.
@@ -28,16 +29,26 @@ this works from a mountain top or a park.
 
 * **Raspberry Pi** — step-by-step setup (AP, WSJT-X, bridge, headless
   auto-start): [`docs/SETUP.md`](docs/SETUP.md)
-* **X4 Pro** — building and flashing from stock firmware:
+* **e-ink device** — building and flashing from stock firmware (both targets):
   [`docs/FLASHING.md`](docs/FLASHING.md)
 * **Device ⇄ bridge protocol**: [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
 * **Future prebuilt releases**: [`docs/RELEASE.md`](docs/RELEASE.md)
 
-> No release is published yet — hardware bring-up is done (the firmware boots
-> and runs on a real X4 Pro) but the end-to-end field link is still being
-> validated. If you build from source, you need **Python 3.10–3.13** for the
+> No release is published yet — hardware bring-up is done on the X4 Pro (the
+> firmware boots and runs on real hardware) but the end-to-end TX path is still
+> being validated, and the Sticky target has **not been flashed on hardware
+> yet**. If you build from source, you need **Python 3.10–3.13** for the
 > firmware toolchain and the FreeInk SDK submodule
 > (`git clone --recurse-submodules`).
+
+---
+
+## Supported devices
+
+| device | build env | hardware status |
+|--------|-----------|-----------------|
+| **Xteink X4 Pro** (ESP32-S3, 800×480 SSD1677 + GT911, portrait UI) | `x4pro` | flashed and validated on real hardware (display, touch, buttons, deep sleep) |
+| **Seeed reTerminal Sticky** (ESP32-S3R8, 3.97" 800×480 SSD1677 + GT911, landscape UI) | `sticky` | compiles clean; **not yet flashed on hardware** |
 
 ---
 
@@ -48,17 +59,17 @@ xteink-ft8/
 ├── bridge/            Raspberry Pi middleware (Python 3, stdlib only)
 │   ├── xteink_bridge.py   entry point
 │   ├── wsjtx_udp.py       WSJT-X UDP protocol encode/decode (pure struct)
-│   ├── device_server.py   TCP server the X4 Pro connects to
+│   ├── device_server.py   TCP server the e-ink device connects to
 │   ├── qso_tracker.py     CQ decode tracking + QSO state
 │   ├── rigctl.py          band change via Hamlib rigctld (QMX/QMX+ by default)
 │   └── scripts/           systemd autostart, AP setup, WSJT-X preseed
-├── firmware/          Xteink X4 Pro firmware (PlatformIO + FreeInk SDK)
+├── firmware/          device firmware, 2 targets (PlatformIO + FreeInk SDK)
 │   ├── platformio.ini
 │   ├── include/           config.h proto.h ui.h net_client.h font5x7.h ...
 │   └── src/               main.cpp proto.cpp ui.cpp net_client.cpp
 ├── docs/
 │   ├── SETUP.md           Raspberry Pi step-by-step deployment
-│   ├── FLASHING.md        X4 Pro build + flash from stock
+│   ├── FLASHING.md        building + flashing either device
 │   ├── PROTOCOL.md        device <-> bridge TCP protocol spec
 │   └── RELEASE.md         future prebuilt-release plan
 └── .github/workflows/     CI that builds firmware + bridge on version tags
@@ -71,27 +82,30 @@ xteink-ft8/
 * Receives WSJT-X **Outgoing** UDP messages (Heartbeat, Status, Decode,
   QSOLogged) on the configured UDP Server port.
 * Maintains a rolling list of the latest FT8 **CQ / QRZ** decodes.
-* Runs a TCP server that the X4 Pro connects to and pushes new decodes /
+* Runs a TCP server that the e-ink device connects to and pushes new decodes /
   status to it in real time.
 * Acts on device commands by sending WSJT-X **Incoming** control messages
   (Reply, FreeText, HaltTx, Clear) back to WSJT-X's "Accept UDP requests" port.
 * Changes band via Hamlib `rigctld` — enabled by default: `install.sh` sets up
   `xteink-rigctld.service`, which auto-detects a QRP Labs **QMX/QMX+** on USB
-  and is shared with WSJT-X (Hamlib NET rigctl), so the X4 Pro's band buttons
+  and is shared with WSJT-X (Hamlib NET rigctl), so the device's band buttons
   retune the whole station. Degrades to a `not_supported` reply if no rigctld.
+
+The bridge is device-neutral: the same process serves an X4 Pro or a Sticky.
 
 Pure Python 3 stdlib — no third-party dependencies to install on the Pi.
 
-### 2. Firmware (`firmware/`) — runs on the Xteink X4 Pro
+### 2. Firmware (`firmware/`) — runs on the e-ink device
 
 Built on the **FreeInk SDK** (the same display/input stack CrossPoint uses),
-targeted for the ESP32-S3 X4 Pro profile:
+for the ESP32-S3 X4 Pro and reTerminal Sticky profiles (`pio run` builds both):
 
 * **Display:** 800×480 SSD1677 e-paper (borrowed driver from FreeInk), driven
   in a **portrait** (480×800) logical layout via a software framebuffer
   transpose — the panel RAM is landscape-only.
 * **Input:** GT911 capacitive touch (taps flash the control for feedback) +
-  two page-turn buttons for scrolling + a power button (hold to deep-sleep).
+  page-turn buttons for scrolling + a power key (hold to deep-sleep; on the
+  Sticky the AI/OK key is shared with power).
 * **Networking:** WiFi client that joins the Pi's AP and connects to the bridge
   TCP server; a framing error just drops + reconnects the socket (it can never
   permanently desync the link). Shows **NO-LINK** and stays fully re-flashable
@@ -112,12 +126,12 @@ then display the progress:
 
 1. The bridge parses each `Decode` message and keeps the ones whose text looks
    like `CQ <call> <grid>` (or `QRZ`).
-2. The X4 Pro shows them as a scrollable list (call, grid, signal, offset).
+2. The device shows them as a scrollable list (call, grid, signal, offset).
 3. Tapping a row sends `reply` with that decode's fields. The bridge encodes a
    WSJT-X `Reply` packet → WSJT-X starts the QSO: it replies with your call,
    exchanges signal reports, and finishes with `RR73` / `TU`.
 4. The bridge forwards `Status` messages (current `tx_message`) and related
-   decodes so the X4 Pro shows the QSO progressing.
+   decodes so the device shows the QSO progressing.
 5. A `CQ` button sends `send_cq` (WSJT-X `FreeText` with `CQ <you> <grid>`,
    send=1). `Band << >>` changes band via the shared rigctld (QMX/QMX+
    auto-detected). `Halt` stops TX.
@@ -138,6 +152,10 @@ work on real hardware with wsjtx-improved 3.2 + latest hamlib (/opt/hamlib).
 
 **Still open:**
 
+* **The Sticky target has never been flashed.** It compiles clean (both envs),
+  and its pin map is Seeed's own, but panel orientation, touch mapping, the
+  shared AI/power key and holding the power latch through deep sleep are all
+  first-boot unknowns — see the Sticky section of `docs/FLASHING.md`.
 * **CQ button does not key the radio yet.** The bridge sends FreeText(send=1)
   but nothing transmits. Suspects, in order: "Accept UDP requests" not
   checked in WSJT-X / nothing bound on 127.0.0.1:2237 (`ss -lunp | grep

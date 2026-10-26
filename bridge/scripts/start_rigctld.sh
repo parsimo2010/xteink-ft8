@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start Hamlib rigctld for xteink-ft8, defaulting to a QRP Labs QMX/QMX+ on
 # USB with zero configuration. Both WSJT-X (as "Hamlib NET rigctl") and the
-# bridge connect to 127.0.0.1:4532, so the X4 Pro's << / >> band buttons work
+# bridge connect to 127.0.0.1:4532, so the device's << / >> band buttons work
 # out of the box and WSJT-X sees the frequency change.
 #
 # Installed as xteink-rigctld.service by install.sh. All settings are

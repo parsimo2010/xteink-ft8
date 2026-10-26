@@ -1,7 +1,8 @@
 # xteink-ft8 bridge (Raspberry Pi)
 
-Pure-Python 3 middleware (stdlib only) that relays WSJT-X FT8 data to an
-Xteink X4 Pro over WiFi/TCP.
+Pure-Python 3 middleware (stdlib only) that relays WSJT-X FT8 data to the
+e-ink device (Xteink X4 Pro or Seeed reTerminal Sticky — the link is the same
+for both) over WiFi/TCP.
 
 ## Run
 
@@ -21,7 +22,7 @@ Defaults:
 |------|---------|
 | `wsjtx_udp.py` | WSJT-X UDP protocol encode/decode (pure struct; answers WSJT-X heartbeats to negotiate schema 3) |
 | `qso_tracker.py` | CQ decode tracking + WSJT-X message classification |
-| `device_server.py` | length-framed JSON TCP server for the X4 Pro |
+| `device_server.py` | length-framed JSON TCP server for the e-ink device |
 | `rigctl.py` | band change via Hamlib `rigctld` (on by default) |
 | `xteink_bridge.py` | entry point tying it together |
 

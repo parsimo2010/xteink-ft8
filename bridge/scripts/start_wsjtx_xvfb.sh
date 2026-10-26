@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start WSJT-X on a virtual framebuffer so the whole stack runs with no
 # keyboard, mouse, or screen attached. WSJT-X is a Qt GUI app, so it needs an
-# X display; Xvfb provides one headlessly. The X4 Pro is the real UI, so the
+# X display; Xvfb provides one headlessly. The e-ink device is the real UI, so the
 # WSJT-X window itself never needs to be seen in the field.
 #
 # Requires: xvfb, wsjtx. Optionally x11vnc to view it over VNC.

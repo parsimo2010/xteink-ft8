@@ -111,4 +111,4 @@ EOF
 fi
 
 echo "AP '$AP_SSID' ready. Bridge listens on ${IP}:4510."
-echo "Point the X4 Pro at SSID '$AP_SSID' / bridge host ${IP}."
+echo "Point the device at SSID '$AP_SSID' / bridge host ${IP}."

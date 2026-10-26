@@ -1,8 +1,9 @@
 # xteink-ft8 bridge <-> device protocol (v1)
 
-Transport: **TCP**, length-prefixed JSON messages. The X4 Pro is the client and
-connects to the bridge's advertised address (the Pi's AP IP, e.g. `192.168.4.1`)
-on **port 4510**.
+Transport: **TCP**, length-prefixed JSON messages. The e-ink device (Xteink X4
+Pro or Seeed reTerminal Sticky — identical protocol) is the client and connects
+to the bridge's advertised address (the Pi's AP IP, e.g. `192.168.4.1`) on
+**port 4510**.
 
 ## Framing
 
@@ -105,11 +106,16 @@ Each command is a JSON object with a `cmd` field.
 
 The bridge sends `qsy` to Hamlib `rigctld` (default `localhost:4532`) using its
 text protocol: `F <freq_hz>;` (or `set_freq`). If `rigctld` is not reachable the
-bridge replies `not_supported` and logs. The standard Pi install runs
+bridge replies `not_supported` (with a `detail` string) and logs. The standard Pi install runs
 `xteink-rigctld.service` (QRP Labs QMX/QMX+ auto-detected), and WSJT-X uses the
 same rigctld as "Hamlib NET rigctl", so it picks up the new frequency via its
 own rig polling. If the user prefers to set band manually, this command is
 simply unused.
+
+> **Known limitation:** `ok_dispatch` means the bridge reached `rigctld`, not
+> that the rig accepted the frequency — the `RPRT <code>` return code is not
+> checked yet, so a rejected QSY still looks successful on the device. Fixing it
+> needs a bench check against a real rigctld (noted in `AGENTS.md`).
 
 ## Failure semantics
 
