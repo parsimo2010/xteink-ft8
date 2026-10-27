@@ -141,8 +141,46 @@ def send_cmd(conn, obj):
     conn.sendall(struct.pack(">L", len(body)) + body)
 
 
+def classify_cases():
+    """FT8 CQ classification (issue 4): the call we report must be the transmitter."""
+    callable_cases = [
+        ("CQ K1ABC FN20", "K1ABC", "FN20"),
+        ("CQ VE3DEF", "VE3DEF", ""),
+        ("CQ 9M2AX OI88", "9M2AX", "OI88"),
+        ("CQ DX K1ABC FN20", "K1ABC", "FN20"),        # the common DX CQ
+        ("CQ POTA K1ABC FN20", "K1ABC", "FN20"),
+        ("CQ SOTA K1ABC FN20", "K1ABC", "FN20"),
+        ("CQ WW K1ABC FN20", "K1ABC", "FN20"),
+        ("CQ TEST K1ABC FN20", "K1ABC", "FN20"),
+        ("CQ NA-012 K1ABC FN20", "K1ABC", "FN20"),    # reference between CQ and call
+        ("CQ DE K1ABC FN20", "K1ABC", "FN20"),
+        ("CQ CQ K1ABC FN20", "K1ABC", "FN20"),
+        ("CQ W1AW K1ABC FN20", "K1ABC", "FN20"),      # directed CQ: answer the sender
+        ("CQ K1ABC/P FN20", "K1ABC", "FN20"),         # portable suffix stripped
+        ("QRZ W9XYZ", "W9XYZ", ""),
+        ("QRZ K1ABC FN20", "K1ABC", "FN20"),
+        ("cq dx k1abc fn20", "K1ABC", "FN20"),        # case insensitive
+    ]
+    not_callable = [
+        "CQ DX",                    # no station in it at all
+        "CQ",
+        "QRZ",
+        "K1ABC W9XYZ -12",          # ordinary exchange
+        "CQ FN20 FN20",             # no callsign
+        "73 de K1ABC", "", None,
+    ]
+    for msg, want_call, want_grid in callable_cases:
+        is_cq, call, grid = qso_tracker.classify(msg)
+        check("classify callable: %r" % msg,
+              is_cq and call == want_call and grid == want_grid,
+              "got %r %r %r" % (is_cq, call, grid))
+    for msg in not_callable:
+        is_cq, call, grid = qso_tracker.classify(msg)
+        check("classify rejected: %r" % msg, not is_cq, "got %r %r" % (call, grid))
+
+
 def stalled_device_cannot_block_broadcast(server):
-    """#1: a device that stops reading must not be able to wedge the caller.
+    """Issue 1: a device that stops reading must not be able to wedge the caller.
 
     Before the fix this call chain blocked inside conn.sendall() forever, and in
     production the caller is the single WSJT-X receive thread. A watchdog turns
@@ -217,6 +255,8 @@ def concurrent_writes_keep_framing(server):
 
 
 def main():
+    classify_cases()
+
     args = xteink_bridge.parse_args([
         "--rx-port", str(RX_PORT),
         "--ctrl-port", str(CTRL_PORT),

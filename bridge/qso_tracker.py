@@ -8,15 +8,29 @@ can actually call, so non-CQ decodes are filtered out by default.
 import json
 import re
 
-# FT8 message patterns we surface as "callable" stations.
-#   CQ K1ABC FN20
-#   CQ K1ABC
-#   QRZ K1ABC
-#   CQ TEST K1ABC FN20      (some contests)
-_CQ_RE = re.compile(
-    r"^\s*(?P<cmd>CQ|QRZ)\s+(?P<call>[A-Z0-9]{3,10})(?:\s+(?P<grid>[A-R]{2}[0-9]{2}))?\s*$",
-    re.IGNORECASE,
-)
+# FT8 messages we surface as "callable" stations. The station to answer is the
+# TRANSMITTER, which is the LAST callsign in the message:
+#   CQ K1ABC FN20                   general CQ by K1ABC
+#   CQ DX K1ABC FN20                general CQ with a modifier
+#   CQ POTA|SOTA|WW|TEST K1ABC FN20 contest / activator CQs
+#   CQ NA-012 K1ABC FN20            reference between CQ and the call
+#   CQ W1AW K1ABC FN20              K1ABC calling W1AW -> we answer K1ABC
+#   QRZ K1ABC [FN20]
+# "CQ DX" with nothing after it is NOT a callable station.
+_CQ_CMDS = {"CQ", "QRZ"}
+
+# A callsign: optional prefix, one district digit, optional suffix, and at least
+# one letter. Tokens that look like a Maidenhead grid are excluded, so a bare grid
+# is never mistaken for a station (FN20 is a grid, not a call).
+_CALL_RE = re.compile(r"^(?=.*[A-Z])[A-Z0-9]{1,3}[0-9][A-Z0-9]{1,3}$")
+_GRID_RE = re.compile(r"^[A-R]{2}[0-9]{2}$")
+
+
+def _is_call(token):
+    base = token.split("/")[0]           # ignore /P, /MM, /AE style suffixes
+    if not base or base == "CQ" or base == "DE" or _GRID_RE.match(base):
+        return False
+    return bool(_CALL_RE.match(base))
 
 MAX_DECODES = 200  # prune the list beyond this many
 DECODE_TTL_SECONDS = 600  # drop decodes older than this (10 min)
@@ -74,11 +88,24 @@ class Decode:
 
 
 def classify(message):
-    """Return (is_cq, call, grid) for a decode message string."""
-    m = _CQ_RE.match(message or "")
-    if not m:
+    """Return (is_cq, call, grid) for a decode message string.
+
+    `call` is the callsign of the station that transmitted the message (the one a
+    `reply` must target), and `grid` is its 4-character Maidenhead locator if the
+    message carried one.
+    """
+    tokens = (message or "").upper().split()
+    if not tokens or tokens[0] not in _CQ_CMDS:
         return False, "", ""
-    return True, m.group("call").upper(), (m.group("grid") or "").upper()
+    rest = tokens[1:]
+    grid = ""
+    if rest and _GRID_RE.match(rest[-1]):
+        grid = rest[-1]
+        rest = rest[:-1]
+    candidates = [t for t in rest if _is_call(t)]
+    if not candidates:
+        return False, "", ""
+    return True, candidates[-1].split("/")[0], grid
 
 
 class QsoTracker:

@@ -99,8 +99,16 @@ Each command is a JSON object with a `cmd` field.
 
 * `id` is a stable per-bridge-session integer (monotonic). The device echoes it
   back in `reply`.
-* `is_cq` is true when the bridge classified the message as a CQ/QRZ call.
-* `call` and `grid` are parsed from `raw` when possible, else empty strings.
+* `is_cq` is true when the bridge classified the message as a CQ or QRZ call: the
+  message starts with `CQ` or `QRZ` and contains at least one callsign-shaped token.
+  Modifier / reference tokens between the command and the callsign are skipped
+  (`DX`, `POTA`, `SOTA`, `WW`, `TEST`, `DE`, a `NA-012` style reference), and a
+  message that carries no callsign at all (`CQ DX`) is **not** callable.
+* `call` is the **transmitting** station - the last callsign-shaped token in the
+  message - so a directed `CQ W1AW K1ABC FN20` reports `K1ABC`, which is who a
+  `reply` must target. Portable suffixes are stripped (`K1ABC/P` -> `K1ABC`).
+* `grid` is the trailing 4-character Maidenhead locator if present, else `""`. A
+  token that looks like a grid is never treated as a callsign.
 
 ## Band change (`qsy`)
 
