@@ -135,6 +135,87 @@ def recv_frame(conn):
     return json.loads(payload.decode("utf-8"))
 
 
+def send_cmd(conn, obj):
+    import json
+    body = json.dumps(obj).encode("utf-8")
+    conn.sendall(struct.pack(">L", len(body)) + body)
+
+
+def stalled_device_cannot_block_broadcast(server):
+    """#1: a device that stops reading must not be able to wedge the caller.
+
+    Before the fix this call chain blocked inside conn.sendall() forever, and in
+    production the caller is the single WSJT-X receive thread. A watchdog turns
+    a regression into a loud failure instead of a hung CI job.
+    """
+    import faulthandler
+    stalled = socket.create_connection(("127.0.0.1", DEV_PORT), timeout=3)
+    send_cmd(stalled, {"cmd": "hello"})   # register it, then never read again
+    time.sleep(0.2)
+
+    faulthandler.dump_traceback_later(20, exit=True)
+    t0 = time.monotonic()
+    for i in range(5000):
+        server.broadcast({"type": "decode", "id": 80000 + i,
+                          "call": "STALLED", "grid": "FN20"})
+    elapsed = time.monotonic() - t0
+    faulthandler.cancel_dump_traceback_later()
+
+    check("broadcast() does not block a stalled device's caller", elapsed < 2.0,
+          "took %.2f s for 5000 frames" % elapsed)
+    stats = server.stats()
+    check("stalled device's stale frames are counted as dropped",
+          any(s["dropped"] > 0 for s in stats), str(stats))
+    stalled.close()
+
+
+def concurrent_writes_keep_framing(server):
+    """#3: responses and pushes share a socket; the stream must stay framed.
+
+    The reader is deliberately slow, so the kernel send buffer fills and the
+    writer blocks mid-frame - exactly the condition under which two threads
+    calling sendall() on one socket interleave their bytes.
+    """
+    dev2 = socket.create_connection(("127.0.0.1", DEV_PORT), timeout=5)
+    send_cmd(dev2, {"cmd": "hello"})
+    if recv_frame(dev2) is None:
+        check("concurrent writes keep framing", False, "no hello back")
+        return
+
+    stop = threading.Event()
+
+    def pusher():
+        i = 0
+        while not stop.is_set():
+            server.broadcast({"type": "decode", "id": 90000 + i,
+                              "call": "VE3DEF", "grid": "FN20"})
+            i += 1
+            time.sleep(0.0005)
+
+    p = threading.Thread(target=pusher, daemon=True)
+    p.start()
+    frames = 0
+    bad = ""
+    try:
+        for _ in range(150):
+            send_cmd(dev2, {"cmd": "get_decodes"})   # ~9 KB response
+            while True:
+                frame = recv_frame(dev2)
+                if frame is None:
+                    raise AssertionError("link dropped after %d frames" % frames)
+                if frame.get("type") == "decodes":
+                    frames += 1
+                    break
+            time.sleep(0.003)                        # force backpressure
+    except Exception as e:                           # noqa: BLE001
+        bad = str(e)
+    stop.set()
+    p.join(timeout=1)
+    check("responses and pushes never interleave on one socket",
+          frames == 150 and not bad, "frames=%d %s" % (frames, bad))
+    dev2.close()
+
+
 def main():
     args = xteink_bridge.parse_args([
         "--rx-port", str(RX_PORT),
@@ -228,6 +309,10 @@ def main():
     wsjtx.sendto(build_status(), wsjtx_addr)
     st = recv_frame(dev)
     check("status push includes band", st.get("type") == "status" and st.get("band") == "20m", str(st)[:80])
+
+    # #1 / #3: socket-safety regressions (run last: these flood every client)
+    stalled_device_cannot_block_broadcast(bridge.server)
+    concurrent_writes_keep_framing(bridge.server)
 
     print("\n==== %d passed, %d failed ====" % (len(PASS), len(FAIL)))
     if FAIL:

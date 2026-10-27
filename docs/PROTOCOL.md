@@ -119,6 +119,16 @@ simply unused.
 
 ## Failure semantics
 
+* One writer thread per device connection, fed by a bounded queue (32 frames).
+  A device that stops reading has its **oldest** queued frames dropped and keeps
+  the newest; it re-syncs with `get_decodes`. Server pushes therefore never
+  block, and frames can never interleave on the socket.
+* The bridge drops a device link that has been **silent for 120 s**. A connected
+  device must send something periodically - the firmware `ping` every 20 s covers
+  this with a 6x margin - so a half-open TCP session from a powered-off device is
+  reaped instead of lingering.
+* At most 4 concurrent device connections; the least recently active one is
+  evicted when a new device connects beyond that.
 * Unknown command -> `error` (`{"message":"unknown command"}`).
 * `reply` with a stale `decode_id` -> `no_such_decode` (the bridge prunes old
   decodes; the device should refresh its list).
