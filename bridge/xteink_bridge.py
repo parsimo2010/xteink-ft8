@@ -199,17 +199,26 @@ class Bridge:
         return {"type": "ok_dispatch", "decode_id": did}
 
     def _cmd_send_cq(self, obj):
-        text = obj.get("text") or ""
+        text = (obj.get("text") or "").strip()
         if not text:
             text = "CQ %s %s" % (self.status["de_call"], self.status["de_grid"])
             text = text.strip()
+        ok, reason = validate_free_text(text, self.args.max_text)
+        if not ok:
+            log.warning("send_cq rejected: %s (%r)", reason, text)
+            return {"type": "text_rejected", "reason": reason, "limit": self.args.max_text}
         packet = wsjtx_udp.build_freetext("xteink", text, True)
         self._send_ctrl(packet)
         log.info("free text TX: %s", text)
         return {"type": "ok_dispatch", "text": text}
 
     def _cmd_send_freetext(self, obj):
-        packet = wsjtx_udp.build_freetext("xteink", obj.get("text") or "", bool(obj.get("send", False)))
+        text = obj.get("text") or ""
+        ok, reason = validate_free_text(text, self.args.max_text)
+        if not ok:
+            log.warning("send_freetext rejected: %s (%r)", reason, text)
+            return {"type": "text_rejected", "reason": reason, "limit": self.args.max_text}
+        packet = wsjtx_udp.build_freetext("xteink", text, bool(obj.get("send", False)))
         self._send_ctrl(packet)
         return {"type": "ok_dispatch"}
 
@@ -224,15 +233,20 @@ class Bridge:
         return {"type": "ok_dispatch"}
 
     def _cmd_qsy(self, obj):
-        if self.rig is None:
-            return {"type": "not_supported", "cmd": "qsy"}
         band = obj.get("band")
         freq = obj.get("freq_hz")
         if not freq and band:
             freq = rigctl.RigCtl.band_to_freq(band)
         if not freq:
             return {"type": "error", "message": "missing band or freq_hz"}
-        ok, detail = self.rig.set_frequency(int(freq))
+        freq = int(freq)
+        if self.args.band_check and not rigctl.freq_is_allowed(freq):
+            log.warning("qsy rejected: %d Hz is outside every amateur allocation "
+                        "(use --no-band-check if you are licensed elsewhere)", freq)
+            return {"type": "error", "message": "freq %d Hz outside amateur allocations" % freq}
+        if self.rig is None:
+            return {"type": "not_supported", "cmd": "qsy"}
+        ok, detail = self.rig.set_frequency(freq)
         if not ok:
             return {"type": "not_supported", "cmd": "qsy", "detail": detail}
         log.info("qsy to %d Hz", int(freq))
@@ -272,6 +286,26 @@ class Bridge:
         return "%.1fM" % mhz
 
 
+# The WSJT-X User Guide: "a transmitted free-text message is limited to 13
+# characters, including blanks". The UDP FreeText message itself carries no
+# length field, so nothing else stops a client from asking for more.
+MAX_FREE_TEXT = 13
+
+
+def validate_free_text(text, limit=MAX_FREE_TEXT):
+    """Return (ok, reason) for a free-text/Tx5 request. Called on untrusted input:
+    whatever passes here is handed to WSJT-X with send=1, i.e. keyed on the air."""
+    if not text:
+        return False, "empty text"
+    if len(text) > limit:
+        return False, ("text is %d characters, limit is %d (WSJT-X transmits at most "
+                       "13 free-text characters)" % (len(text), limit))
+    for ch in text:
+        if ord(ch) < 0x20 or ord(ch) > 0x7E:
+            return False, "text must be printable ASCII only"
+    return True, ""
+
+
 def _decode_to_dict(d):
     return {
         "time": d.time,
@@ -294,6 +328,11 @@ def parse_args(argv=None):
     p.add_argument("--port", type=int, default=4510, help="device server port (default 4510)")
     p.add_argument("--rig-host", default="127.0.0.1", help="rigctld host for band changes (default 127.0.0.1; empty string disables)")
     p.add_argument("--rig-port", type=int, default=4532, help="rigctld port (default 4532)")
+    p.add_argument("--max-text", type=int, default=MAX_FREE_TEXT,
+                   help="maximum free-text/Tx5 length accepted from a device "
+                        "(default 13, the WSJT-X transmit limit)")
+    p.add_argument("--no-band-check", dest="band_check", action="store_false",
+                   help="allow qsy to any frequency (default: amateur allocations only)")
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     return p.parse_args(argv)
 

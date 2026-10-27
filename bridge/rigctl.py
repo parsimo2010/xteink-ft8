@@ -27,6 +27,34 @@ BAND_CENTERS = {
 }
 
 
+# Amateur allocations (Hz) the bridge will tune to by default. This is a
+# footgun guard against a malformed or hostile qsy, not a licence check: it is
+# deliberately generous (Region-2-ish edges) and can be switched off with
+# --no-band-check for experimenters with an appropriate licence.
+BAND_EDGES = [
+    (1_800_000, 2_000_000),    # 160m
+    (3_500_000, 4_000_000),    # 80m
+    (5_100_000, 5_600_000),    # 60m (region dependent)
+    (7_000_000, 7_300_000),    # 40m
+    (10_100_000, 10_150_000),  # 30m
+    (14_000_000, 14_350_000),  # 20m
+    (18_068_000, 18_168_000),  # 17m
+    (21_000_000, 21_450_000),  # 15m
+    (24_890_000, 24_990_000),  # 12m
+    (28_000_000, 29_700_000),  # 10m
+    (50_000_000, 54_000_000),  # 6m
+]
+
+
+def freq_is_allowed(freq_hz):
+    """True when freq_hz falls inside one of the amateur allocations above."""
+    try:
+        f = int(freq_hz)
+    except (TypeError, ValueError):
+        return False
+    return any(lo <= f <= hi for lo, hi in BAND_EDGES)
+
+
 class RigCtl:
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT):
         self.host = host

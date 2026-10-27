@@ -225,6 +225,8 @@ The bridge logs `bridge ready: rx=127.0.0.1:2238 ... device=0.0.0.0:4510`.
 | WSJT-X "Test CAT" red | If Rig is a *direct serial* rig (e.g. QRP Labs QMX on /dev/ttyACM0): `xteink-rigctld` is holding the port — either set Rig to *Hamlib NET rigctl* @ `127.0.0.1:4532` (recommended; band buttons keep working) or `sudo systemctl disable --now xteink-rigctld`. Check `sudo journalctl -u xteink-rigctld -e`. |
 | WSJT-X service fails: **EXEC spawn ... permission denied** | Script lost its exec bit (old checkout). `git pull` (scripts are committed 755 now) or `chmod +x ~/xteink-ft8/bridge/scripts/*.sh && sudo systemctl restart xteink-wsjtx`. |
 | Bridge won't start | `sudo journalctl -u xteink-bridge -e` for the traceback. |
+| CQ button does nothing, log says `send_cq rejected: text is 14 characters` | WSJT-X transmits at most 13 free-text characters, and `CQ <call> <grid>` is 8 + len(callsign): a 6-character callsign needs `--max-text 14`. Add it to `ExecStart` in `/etc/systemd/system/xteink-bridge.service`, then `sudo systemctl daemon-reload && sudo systemctl restart xteink-bridge`. |
+| `setup_ap.sh` refuses your `AP_PASS` | It must be 8-63 characters of letters, digits, `.`, `_`, `-` only — the passphrase is written into `/etc/hostapd/hostapd.conf`, so characters like `#` or a newline would inject config lines. |
 | WSJT-X not on the virtual display | `systemctl status xteink-wsjtx`; confirm `xvfb` installed and `DISPLAY=:1` is free. |
 
 ---

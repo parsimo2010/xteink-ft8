@@ -22,6 +22,30 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# --- Validate the credentials before anything touches the system -------------
+# The passphrase ends up inside /etc/hostapd/hostapd.conf on the legacy path, so
+# a value containing a newline or '#' could inject further configuration lines.
+case "$AP_PASS" in
+  *[!A-Za-z0-9._-]*)
+    echo "AP_PASS may only contain letters, digits, '.', '_' and '-' (got something else)." >&2
+    exit 1 ;;
+esac
+if [ "${#AP_PASS}" -lt 8 ] || [ "${#AP_PASS}" -gt 63 ]; then
+  echo "AP_PASS must be 8-63 characters for WPA2 (got ${#AP_PASS})." >&2
+  exit 1
+fi
+case "$AP_SSID" in
+  *[!A-Za-z0-9._-]*)
+    echo "AP_SSID may only contain letters, digits, '.', '_' and '-'." >&2
+    exit 1 ;;
+esac
+if [ "$AP_PASS" = "ft8field" ]; then
+  echo "NOTE: you are using the passphrase that is published in this repository."
+  echo "      Anyone nearby can join the AP, and the bridge device port has no"
+  echo "      authentication. Set your own with:  AP_PASS=<yours> $0"
+  echo "      and rebuild the firmware with the matching WIFI_PASSWORD."
+fi
+
 IP="${AP_IP%/*}"
 
 if ! ip link show "$IFACE" >/dev/null 2>&1; then
@@ -74,6 +98,8 @@ else
   apt-get update -y
   apt-get install -y hostapd dnsmasq
 
+  # The PSK goes into this file: create it private, not world-readable.
+  umask 077
   cat >/etc/hostapd/hostapd.conf <<EOF
 interface=$IFACE
 driver=nl80211
@@ -86,6 +112,7 @@ wpa_passphrase=$AP_PASS
 wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 EOF
+  chmod 600 /etc/hostapd/hostapd.conf
 
   sed -i "s|^#DAEMON_CONF=.*|DAEMON_CONF=\"/etc/hostapd/hostapd.conf\"|" /etc/default/hostapd
   systemctl unmask hostapd

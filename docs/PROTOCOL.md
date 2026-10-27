@@ -43,6 +43,7 @@ Each command is a JSON object with a `cmd` field.
 | `clear_decodes`| `{}`          | all decodes cleared (WSJT-X Clear) |
 | `qso_logged`  | `{...}`         | a QSO was logged |
 | `no_such_decode` | `{"decode_id":N}` | requested decode no longer available |
+| `text_rejected` | `{"reason":"..","limit":N}` | free text refused by input validation |
 | `not_supported` | `{"cmd":".."}` | command not supported by this build |
 | `pong`        | `{}`            | reply to `ping` |
 | `error`       | `{"message":".."}` | a recoverable error |
@@ -109,6 +110,26 @@ Each command is a JSON object with a `cmd` field.
   `reply` must target. Portable suffixes are stripped (`K1ABC/P` -> `K1ABC`).
 * `grid` is the trailing 4-character Maidenhead locator if present, else `""`. A
   token that looks like a grid is never treated as a callsign.
+
+## Input validation and trust boundary
+
+The device port has **no authentication**: anything that can open TCP 4510 can key
+the transmitter through `send_cq` / `send_freetext` and can move the rig through
+`qsy`. It is designed for a private, ad-hoc AP that nothing else joins - treat that
+AP as if it were an open wire into your PA. Run `setup_ap.sh` with your own
+`AP_PASS` (the repository default is public), and do not expose 4510 beyond the AP.
+
+Because that input is untrusted, the bridge validates it before touching WSJT-X:
+
+* **free text** - printable ASCII only, at most `--max-text` characters (default
+  **13**, which is the WSJT-X transmit limit for free-text messages). A violation
+  answers `{"type":"text_rejected","reason":"..","limit":13}` and nothing is sent.
+  Note the consequence for a CQ composed by the bridge: `CQ <call> <grid>` is
+  8 characters plus the length of the callsign, so a 6-character callsign needs
+  `--max-text 14`. The device reports the rejection instead of keying a doomed TX.
+* **frequency** - `qsy` is refused outside the amateur allocations (160m through 6m,
+  generously) unless the bridge runs with `--no-band-check`. This is a footgun guard,
+  not a licence check.
 
 ## Band change (`qsy`)
 

@@ -14,6 +14,7 @@ import threading
 import time
 
 import qso_tracker
+import rigctl
 import wsjtx_udp
 import xteink_bridge
 
@@ -221,6 +222,42 @@ def tracker_survives_concurrent_ack():
     check("tracker kept every decode", len(kept) == n, "kept=%d" % len(kept))
 
 
+def boundary_cases():
+    """Issue 6: the device port is unauthenticated, so its input is untrusted."""
+    args = xteink_bridge.parse_args([
+        "--rx-port", str(RX_PORT + 1), "--ctrl-port", "23999",
+        "--port", str(DEV_PORT + 1), "--rig-host", "",
+    ])
+    b = xteink_bridge.Bridge(args)
+    b.status["de_call"] = "W9XYZ"
+    b.status["de_grid"] = "EM48"
+
+    ok = b.handle_command({"cmd": "send_freetext", "text": "CQ W9XYZ EM48", "send": True})
+    check("13-character free text accepted", ok.get("type") == "ok_dispatch", str(ok))
+    for label, text in [("14 characters", "CQ W9XYZ EM48!"),
+                        ("control character", "CQ\nCQ W9"),
+                        ("non-ASCII", "CQ W9XYZ\u00c5"),
+                        ("empty", "")]:
+        resp = b.handle_command({"cmd": "send_freetext", "text": text, "send": True})
+        check("free text rejected: %s" % label, resp.get("type") == "text_rejected", str(resp))
+
+    cq = b.handle_command({"cmd": "send_cq"})
+    check("composed CQ uses the WSJT-X callsign", cq.get("text") == "CQ W9XYZ EM48", str(cq))
+    b.status["de_call"] = "VE3DEF"          # 6-char call -> "CQ VE3DEF FN20" is 14
+    b.status["de_grid"] = "FN20"
+    long_cq = b.handle_command({"cmd": "send_cq"})
+    check("over-long composed CQ is refused, not keyed",
+          long_cq.get("type") == "text_rejected", str(long_cq))
+
+    check("qsy outside amateur allocations rejected",
+          b.handle_command({"cmd": "qsy", "freq_hz": 100_000_000}).get("type") == "error")
+    check("qsy inside amateur allocations reaches the rig path",
+          b.handle_command({"cmd": "qsy", "freq_hz": 14_074_000}).get("type") == "not_supported",
+          "rig disabled -> not_supported is the pass-through signal")
+    check("rigctl band-edge table covers the FT8 band centres",
+          all(rigctl.freq_is_allowed(f) for f in rigctl.BAND_CENTERS.values()))
+
+
 def stalled_device_cannot_block_broadcast(server):
     """Issue 1: a device that stops reading must not be able to wedge the caller.
 
@@ -299,6 +336,7 @@ def concurrent_writes_keep_framing(server):
 def main():
     classify_cases()
     tracker_survives_concurrent_ack()
+    boundary_cases()
 
     args = xteink_bridge.parse_args([
         "--rx-port", str(RX_PORT),
