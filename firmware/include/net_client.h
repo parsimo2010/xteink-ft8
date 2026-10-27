@@ -61,5 +61,8 @@ class NetClient {
 
   void enqueue_rx(const String& s);
   bool enqueue_tx(const String& s);
-  bool dequeue_tx(String& out);
+  // Peek + commit: a frame leaves the queue only once it is fully on the wire,
+  // so a socket that dies mid-frame cannot silently swallow a command.
+  bool peek_tx(String& out);
+  void drop_tx();
 };

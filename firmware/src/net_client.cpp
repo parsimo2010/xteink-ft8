@@ -72,9 +72,18 @@ void NetClient::update() {
   }
 
   // --- Flush outbound queue ----------------------------------------------
+  // The queued String is already framed. write_all() retries short writes instead
+  // of letting one desynchronise the length-prefixed stream, and a frame leaves
+  // the queue only after it is fully on the wire.
   String out;
-  while (_client.connected() && dequeue_tx(out)) {
-    _client.print(out);  // raw payload already framed
+  while (_client.connected() && peek_tx(out)) {
+    if (!write_all(_client, (const uint8_t*)out.c_str(), out.length(), cfg::TCP_TIMEOUT_MS)) {
+      cfg::serial().println("[net] write failed mid-frame; dropping link to re-sync");
+      _client.stop();
+      _connected = false;
+      break;
+    }
+    drop_tx();
   }
 }
 
@@ -138,10 +147,15 @@ bool NetClient::enqueue_tx(const String& s) {
   return true;
 }
 
-bool NetClient::dequeue_tx(String& out) {
+bool NetClient::peek_tx(String& out) {
   if (_tx_count == 0) return false;
   out = _tx[_tx_head];
+  return true;
+}
+
+void NetClient::drop_tx() {
+  if (_tx_count == 0) return;
+  _tx[_tx_head] = String();  // free the frame as soon as it has been sent
   _tx_head = (_tx_head + 1) % TX_QUEUE;
   _tx_count--;
-  return true;
 }

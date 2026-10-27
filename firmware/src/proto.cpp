@@ -1,17 +1,20 @@
 #include "proto.h"
 #include <WiFi.h>
 
-bool send_frame(WiFiClient& client, const JsonDocument& doc) {
-  size_t n = measureJson(doc);
-  if (n == 0 || n > MAX_FRAME) return false;
-  uint8_t hdr[4];
-  hdr[0] = (n >> 24) & 0xFF;
-  hdr[1] = (n >> 16) & 0xFF;
-  hdr[2] = (n >> 8) & 0xFF;
-  hdr[3] = n & 0xFF;
-  if (client.write(hdr, 4) != 4) return false;
-  // Stream the JSON directly to the socket.
-  return serializeJson(doc, client) == n;
+bool write_all(WiFiClient& client, const uint8_t* buf, size_t len, uint32_t timeout_ms) {
+  size_t done = 0;
+  uint32_t start = millis();
+  while (done < len) {
+    const int w = client.write(buf + done, len - done);
+    if (w > 0) {
+      done += (size_t)w;
+      start = millis();  // progress resets the deadline
+      continue;
+    }
+    if ((int32_t)(millis() - start) > (int32_t)timeout_ms) return false;
+    delay(1);
+  }
+  return true;
 }
 
 int read_frame(WiFiClient& client, JsonDocument& doc, uint32_t timeout_ms) {

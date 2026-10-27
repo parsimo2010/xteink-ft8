@@ -8,8 +8,9 @@
 // Maximum frame payload (bytes), matching the bridge's cap.
 inline constexpr uint32_t MAX_FRAME = 16384;
 
-// Send a JSON document as a length-framed message. Returns true on success.
-bool send_frame(WiFiClient& client, const JsonDocument& doc);
+// Write every byte of buf, retrying short writes, or fail after timeout_ms.
+// The single rule that keeps a framed stream readable on the other end.
+bool write_all(WiFiClient& client, const uint8_t* buf, size_t len, uint32_t timeout_ms);
 
 // Block (with a timeout) reading one framed message into `doc`.
 // Returns 1 on success, 0 on clean EOF, -1 on timeout/error.
