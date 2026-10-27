@@ -179,6 +179,48 @@ def classify_cases():
         check("classify rejected: %r" % msg, not is_cq, "got %r %r" % (call, grid))
 
 
+def tracker_survives_concurrent_ack():
+    """Issue 2: add() on one thread must not lose rows to ack() on another.
+
+    Preemption is forced to the tightest possible interval so the read-modify-write
+    window in ack()/_prune() is actually hit; without the tracker lock this loses
+    rows that were already pushed to the device (which then get no_such_decode).
+    """
+    import sys
+    original = sys.getswitchinterval()
+    n = 1500
+    tracker = qso_tracker.QsoTracker(max_decodes=10 ** 7, ttl_seconds=10 ** 9)
+    added = []
+
+    def raw(msg="CQ K1ABC FN20"):
+        return {"time": 1, "snr": 0, "delta_time": 0.4, "delta_freq": 500,
+                "mode": "FT8", "message": msg, "low_confidence": False, "off_air": False}
+
+    def feeder():
+        for _ in range(n):
+            added.append(tracker.add(raw(), 1.0).id)
+
+    def acker():
+        for seq in range(0, n, 3):
+            tracker.ack(seq)
+
+    sys.setswitchinterval(1e-9)
+    try:
+        threads = [threading.Thread(target=feeder), threading.Thread(target=acker)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        sys.setswitchinterval(original)
+
+    kept = {d.id for d in tracker.cq_list(1.0)}
+    lost = sorted(set(added) - kept)
+    check("tracker loses no decode to a concurrent ack", not lost,
+          "%d of %d lost: %s" % (len(lost), n, lost[:5]))
+    check("tracker kept every decode", len(kept) == n, "kept=%d" % len(kept))
+
+
 def stalled_device_cannot_block_broadcast(server):
     """Issue 1: a device that stops reading must not be able to wedge the caller.
 
@@ -256,6 +298,7 @@ def concurrent_writes_keep_framing(server):
 
 def main():
     classify_cases()
+    tracker_survives_concurrent_ack()
 
     args = xteink_bridge.parse_args([
         "--rx-port", str(RX_PORT),

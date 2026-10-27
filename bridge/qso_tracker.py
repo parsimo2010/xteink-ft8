@@ -7,6 +7,7 @@ can actually call, so non-CQ decodes are filtered out by default.
 
 import json
 import re
+import threading
 
 # FT8 messages we surface as "callable" stations. The station to answer is the
 # TRANSMITTER, which is the LAST callsign in the message:
@@ -115,15 +116,22 @@ class QsoTracker:
         self._next_id = 1
         self._max = max_decodes
         self._ttl = ttl_seconds
+        # add()/clear() run on the WSJT-X receive thread while get()/snapshot()/
+        # ack() run on device handler threads. Both lists are read-modify-written
+        # by rebinding, so without this lock an add() landing inside an ack()'s
+        # rebuild window disappears from _decodes AND _by_id - the device already
+        # has that decode on screen and then gets no_such_decode when it taps it.
+        self._lock = threading.RLock()
 
     def add(self, raw_decode, now_ts):
         """Feed a raw WSJT-X decode dict; returns the Decode or None."""
-        d = Decode(self._next_id, raw_decode, now_ts)
-        self._next_id += 1
-        self._decodes.append(d)
-        self._by_id[d.id] = d
-        self._prune(now_ts)
-        return d
+        with self._lock:
+            d = Decode(self._next_id, raw_decode, now_ts)
+            self._next_id += 1
+            self._decodes.append(d)
+            self._by_id[d.id] = d
+            self._prune(now_ts)
+            return d
 
     def _prune(self, now_ts):
         cutoff = now_ts - self._ttl
@@ -134,22 +142,27 @@ class QsoTracker:
         self._by_id = {d.id: d for d in self._decodes}
 
     def clear(self):
-        self._decodes.clear()
-        self._by_id.clear()
+        with self._lock:
+            self._decodes.clear()
+            self._by_id.clear()
 
     def get(self, did):
-        return self._by_id.get(did)
+        with self._lock:
+            return self._by_id.get(did)
 
     def cq_list(self, now_ts):
         """Decodes that are CQ/QRZ, newest last."""
-        return [d for d in self._decodes if d.is_cq]
+        with self._lock:
+            return [d for d in self._decodes if d.is_cq]
 
     def snapshot(self, now_ts):
         """Newest CQ decodes, capped so the framed reply stays under 16 KB."""
-        entries = [d.as_dict() for d in self.cq_list(now_ts)][-MAX_SNAPSHOT:]
+        with self._lock:
+            entries = [d.as_dict() for d in self._decodes if d.is_cq][-MAX_SNAPSHOT:]
+            seq = self._next_id
         while entries and sum(len(json.dumps(e, separators=(",", ":"))) + 1 for e in entries) > MAX_SNAPSHOT_BYTES:
             entries.pop(0)
-        return {"seq": self._next_id, "decodes": entries}
+        return {"seq": seq, "decodes": entries}
 
     def ack(self, seq):
         """Device acknowledged decodes up to seq.
@@ -159,5 +172,6 @@ class QsoTracker:
         """
         if seq is None:
             return
-        self._decodes = [d for d in self._decodes if d.id > seq or d.is_cq]
-        self._by_id = {d.id: d for d in self._decodes}
+        with self._lock:
+            self._decodes = [d for d in self._decodes if d.id > seq or d.is_cq]
+            self._by_id = {d.id: d for d in self._decodes}
