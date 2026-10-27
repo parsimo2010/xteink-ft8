@@ -31,7 +31,10 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow (CI only; it does not run on normal commits):
+`.github/workflows/ci.yml` is the everyday gate: it runs `python test_bridge.py`
+and `pio run -e x4pro -e sticky` on every push to `main` and on every pull request,
+with the same pinned Python and PlatformIO as the release build. The release
+workflow below then rebuilds and packages on a tag:
 
 1. Check out the repo with submodules.
 2. Set up Python 3.12 (the Arduino-ESP32 toolchain rejects 3.14).
@@ -60,7 +63,8 @@ The workflow (CI only; it does not run on normal commits):
       the NET DIAGNOSTIC screen), touch taps landing where expected, BQ27220
       battery %, UP/DOWN scroll, AI-click re-fetch, 1.5 s AI-hold sleep +
       power-button wake.
-- [x] `test_bridge.py` passes (16/16; CI runs it too).
+- [x] `test_bridge.py` passes (55/55; CI runs it on every push to `main` and on
+      every pull request, not only when a tag is pushed).
 
 ## Versioning
 

@@ -25,7 +25,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install PlatformIO
-        run: pip install platformio
+        # Pinned on purpose: an unpinned Core can break the build of a tag that
+        # was already published and previously worked. Keep in sync with
+        # .github/workflows/ci.yml.
+        run: pip install "platformio==6.1.19"
 
       - name: Build firmware (X4 Pro + reTerminal Sticky)
         working-directory: firmware

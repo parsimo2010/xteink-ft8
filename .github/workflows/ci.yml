@@ -1,0 +1,70 @@
+name: ci
+
+# Verify main on every push and pull request: the same two checks the release
+# workflow performs, minus packaging, in parallel jobs.
+#
+# Before this, the only workflow was triggered by `v*.*.*` tags, so a broken
+# commit was normally discovered when someone tried to publish a release.
+# `docs/RELEASE.md` used to describe that as intentional; it is now a fallback,
+# not the only gate.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # Keep in sync with release.yml. The Arduino-ESP32 / pioarduino toolchain in
+  # firmware/platformio.ini rejects Python 3.14, and an unpinned PlatformIO let a
+  # new Core release break the build of an already-published tag.
+  PLATFORMIO_VERSION: 6.1.19
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  bridge:
+    name: Bridge tests (Python stdlib)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # No dependency install step: the bridge is deliberately stdlib-only so the
+      # Raspberry Pi zip needs no pip install. See bridge/requirements.txt.
+      - name: Run bridge tests
+        working-directory: bridge
+        run: python test_bridge.py
+
+  firmware:
+    name: Firmware build (x4pro + sticky)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install PlatformIO
+        run: pip install "platformio==${{ env.PLATFORMIO_VERSION }}"
+
+      - name: Build both targets
+        working-directory: firmware
+        run: pio run -e x4pro -e sticky
+
+      - name: Show what was produced
+        run: |
+          set -euo pipefail
+          for e in x4pro sticky; do
+            bin="firmware/.pio/build/$e/firmware.bin"
+            test -f "$bin" || { echo "missing $bin"; exit 1; }
+            echo "$e: $(wc -c < "$bin") bytes, header mode=0x$(od -An -tx1 -N1 "$bin" | tr -d ' ') flash-size-byte=0x$(od -An -tx1 -j2 -N1 "$bin" | tr -d ' ')"
+          done
