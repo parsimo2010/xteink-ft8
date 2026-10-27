@@ -73,8 +73,8 @@ void NetClient::update() {
 
   // --- Flush outbound queue ----------------------------------------------
   // The queued String is already framed. write_all() retries short writes instead
-  // of letting one desynchronise the length-prefixed stream, and a frame leaves
-  // the queue only after it is fully on the wire.
+  // of letting one desynchronise the length-prefixed stream, and the frame is
+  // removed from the queue only after it is fully on the wire.
   String out;
   while (_client.connected() && peek_tx(out)) {
     if (!write_all(_client, (const uint8_t*)out.c_str(), out.length(), cfg::TCP_TIMEOUT_MS)) {
@@ -126,15 +126,25 @@ bool NetClient::send(JsonDocument&& doc) {
 bool NetClient::poll(JsonDocument& out) {
   if (_rx_count == 0) return false;
   String s = _rx[_rx_head];
+  _rx[_rx_head] = String();  // release the buffer before parsing, not after
   _rx_head = (_rx_head + 1) % NC_QUEUE;
   _rx_count--;
+  if (_rx_bytes >= s.length()) _rx_bytes -= s.length();
   DeserializationError err = deserializeJson(out, s);
   return !err;
 }
 
 void NetClient::enqueue_rx(const String& s) {
-  if (_rx_count >= NC_QUEUE) return;  // drop oldest? keep simple: drop new
+  // Drop the NEW frame when the queue is full: frames are self-contained, so
+  // dropping one cannot desync anything, and the memory bound matters more than
+  // the odd missed status push (the device re-fetches with get_decodes).
+  if (_rx_count >= NC_QUEUE || _rx_bytes + s.length() > NC_QUEUE_BYTES) {
+    cfg::serial().printf("[net] rx queue full, dropped a %u byte frame\n",
+                         (unsigned)s.length());
+    return;
+  }
   _rx[_rx_tail] = s;
+  _rx_bytes += s.length();
   _rx_tail = (_rx_tail + 1) % NC_QUEUE;
   _rx_count++;
 }

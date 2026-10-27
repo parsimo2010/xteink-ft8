@@ -1,6 +1,12 @@
 #include "proto.h"
 #include <WiFi.h>
 
+// One reusable receive scratch buffer instead of a per-frame allocation. There is
+// exactly one reader (NetClient, driven from loop()), so a static is safe -- and
+// allocating/freeing up to 16 KB per inbound frame is how ESP32 heap
+// fragmentation eventually makes reads fail and decodes silently stop.
+static uint8_t g_rx_scratch[MAX_FRAME];
+
 bool write_all(WiFiClient& client, const uint8_t* buf, size_t len, uint32_t timeout_ms) {
   size_t done = 0;
   uint32_t start = millis();
@@ -17,48 +23,39 @@ bool write_all(WiFiClient& client, const uint8_t* buf, size_t len, uint32_t time
   return true;
 }
 
-int read_frame(WiFiClient& client, JsonDocument& doc, uint32_t timeout_ms) {
-  uint8_t hdr[4];
+// Read exactly n bytes, chunk-wise, tolerating a socket that dribbles.
+// Returns the byte count read (< n on timeout/EOF).
+static size_t read_exact(WiFiClient& client, uint8_t* dst, size_t n, uint32_t timeout_ms) {
   size_t got = 0;
   uint32_t start = millis();
-  while (got < 4) {
-    if (client.available()) {
-      hdr[got++] = (uint8_t)client.read();
-      start = millis();  // reset on any byte
-    } else if (millis() - start > timeout_ms) {
-      return (got == 0) ? 0 : -1;
-    } else {
-      delay(1);
-    }
-  }
-  uint32_t n = ((uint32_t)hdr[0] << 24) | ((uint32_t)hdr[1] << 16) | ((uint32_t)hdr[2] << 8) | hdr[3];
-  if (n == 0 || n > MAX_FRAME) return -1;
-
-  // Read payload into a buffer, then deserialize.
-  uint8_t* buf = new (std::nothrow) uint8_t[n];
-  if (!buf) return -1;
-  got = 0;
-  start = millis();
   while (got < n) {
-    if (client.available()) {
-      int b = client.read();
-      if (b < 0) break;
-      buf[got++] = (uint8_t)b;
+    const int avail = client.available();
+    if (avail > 0) {
+      const size_t want = ((size_t)avail < (n - got)) ? (size_t)avail : (n - got);
+      const int r = client.read(dst + got, want);
+      if (r <= 0) break;
+      got += (size_t)r;
       start = millis();
-    } else if (millis() - start > timeout_ms) {
-      break;
-    } else {
-      delay(1);
+      continue;
     }
+    if ((int32_t)(millis() - start) > (int32_t)timeout_ms) break;
+    delay(1);
   }
-  DeserializationError err = DeserializationError::Ok;
-  if (got == n) {
-    err = deserializeJson(doc, buf, n);
-  }
-  delete[] buf;
-  if (got != n) return (got == 0) ? 0 : -1;
-  if (err) return -1;
-  return 1;
+  return got;
+}
+
+int read_frame(WiFiClient& client, JsonDocument& doc, uint32_t timeout_ms) {
+  uint8_t hdr[4];
+  if (read_exact(client, hdr, 4, timeout_ms) != 4) return 0;
+
+  const uint32_t n = ((uint32_t)hdr[0] << 24) | ((uint32_t)hdr[1] << 16) |
+                     ((uint32_t)hdr[2] << 8) | (uint32_t)hdr[3];
+  if (n == 0 || n > MAX_FRAME) return -1;  // framing error: caller must drop the socket
+
+  if (read_exact(client, g_rx_scratch, n, timeout_ms) != n) return -1;
+
+  const DeserializationError err = deserializeJson(doc, g_rx_scratch, (size_t)n);
+  return err ? -1 : 1;
 }
 
 void set_cmd(JsonDocument& doc, const char* cmd) {

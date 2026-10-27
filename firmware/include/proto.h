@@ -12,7 +12,8 @@ inline constexpr uint32_t MAX_FRAME = 16384;
 // The single rule that keeps a framed stream readable on the other end.
 bool write_all(WiFiClient& client, const uint8_t* buf, size_t len, uint32_t timeout_ms);
 
-// Block (with a timeout) reading one framed message into `doc`.
+// Block (with a timeout) reading one framed message into `doc`, using an
+// internal static scratch buffer (no per-frame heap allocation).
 // Returns 1 on success, 0 on clean EOF, -1 on timeout/error.
 int read_frame(WiFiClient& client, JsonDocument& doc, uint32_t timeout_ms);
 

@@ -6,8 +6,10 @@
 #include <WiFi.h>
 #include <cstdint>
 
-constexpr int NC_QUEUE = 16;      // max queued inbound messages
-constexpr int TX_QUEUE = 8;       // max queued outbound commands
+constexpr int NC_QUEUE = 6;             // max queued inbound messages
+constexpr size_t NC_QUEUE_BYTES = 24576;  // and their combined size, so a burst of
+                                          // large snapshots cannot outgrow the heap
+constexpr int TX_QUEUE = 8;             // max queued outbound commands
 
 class NetClient {
  public:
@@ -54,6 +56,7 @@ class NetClient {
 
   // Inbound queue (JSON strings, compact).
   String _rx[NC_QUEUE];
+  size_t _rx_bytes = 0;
   int _rx_head = 0, _rx_tail = 0, _rx_count = 0;
   // Outbound queue.
   String _tx[TX_QUEUE];
@@ -61,7 +64,7 @@ class NetClient {
 
   void enqueue_rx(const String& s);
   bool enqueue_tx(const String& s);
-  // Peek + commit: a frame leaves the queue only once it is fully on the wire,
+  // Peek + commit: the frame leaves the queue only once it is fully on the wire,
   // so a socket that dies mid-frame cannot silently swallow a command.
   bool peek_tx(String& out);
   void drop_tx();
