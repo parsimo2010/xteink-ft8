@@ -163,6 +163,9 @@ class Bridge:
         return fn(obj)
 
     def _cmd_hello(self, obj):
+        # Which firmware is out there? Field support starts with this log line.
+        log.info("device hello: protocol=%s fw_version=%s",
+                 obj.get("version"), obj.get("fw_version") or "unknown")
         return {
             "type": "hello",
             "ok": True,

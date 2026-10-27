@@ -70,7 +70,7 @@ dies on the operator's bench in the field.
       the NET DIAGNOSTIC screen), touch taps landing where expected, BQ27220
       battery %, UP/DOWN scroll, AI-click re-fetch, 1.5 s AI-hold sleep +
       power-button wake.
-- [x] `test_bridge.py` passes (55/55; CI runs it on every push to `main` and on
+- [x] `test_bridge.py` passes (62/62; CI runs it on every push to `main` and on
       every pull request, and the release packaging runs it again from inside the
       staged bridge zip).
 
@@ -85,7 +85,9 @@ Keep a `CHANGELOG.md` summarizing FTFI (fixed/tested/added) per version.
 ## Release process (maintainer)
 
 ```bash
-# update CHANGELOG.md, bump firmware version in platformio.ini if needed
+# bump -DXTEINK_FW_VERSION in firmware/platformio.ini (both envs) when the firmware
+#   changed: it is what the device shows on NET DIAGNOSTIC and sends in `hello`
+# update CHANGELOG.md (still missing - tracked in the review follow-up issue)
 git add -A && git commit -m "Prepare v0.1.0"
 git tag -a v0.1.0 -m "First field-test release"
 git push origin main

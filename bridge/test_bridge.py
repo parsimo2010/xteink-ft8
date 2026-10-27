@@ -215,7 +215,7 @@ def tracker_survives_concurrent_ack():
     finally:
         sys.setswitchinterval(original)
 
-    kept = {d.id for d in tracker.cq_list(1.0)}
+    kept = {d.id for d in tracker.cq_list()}
     lost = sorted(set(added) - kept)
     check("tracker loses no decode to a concurrent ack", not lost,
           "%d of %d lost: %s" % (len(lost), n, lost[:5]))
@@ -446,7 +446,7 @@ def main():
     time.sleep(0.3)
 
     # tracker sanity
-    cq = bridge.tracker.cq_list(time.time())
+    cq = bridge.tracker.cq_list()
     check("tracker keeps only CQ decodes", len(cq) == 2, "got %d" % len(cq))
     check("CQ call parsed", cq[0].call == "K1ABC" and cq[0].grid == "FN20")
     check("status captured", bridge.status["de_call"] == "W9XYZ")

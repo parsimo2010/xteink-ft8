@@ -10,7 +10,11 @@ Header (every message):
     id     QByteArray (4-byte length + utf8 bytes)
 
 Outgoing (WSJT-X -> us): Heartbeat, Status, Decode, QSOLogged, Clear.
-Incoming (us -> WSJT-X): Reply, FreeText, HaltTx, Clear, Close.
+Incoming (us -> WSJT-X): Reply, FreeText, HaltTx, Clear.
+
+Not implemented here (this bridge has no need for them): Close, Replay (its payload
+layout differs from Decode, so it is deliberately not parsed rather than guessed),
+WSPR Decode, LoggedADIF, HighlightCallsign and the configuration messages.
 
 Reference: WSJT-X source `Network/NetworkMessage.hpp` (message layout) and
 `Network/NetworkMessage.cpp` (header serialization).
@@ -121,8 +125,14 @@ def parse_message(datagram):
     if msg_type == STATUS:
         return msg_type, client_id, _parse_status(datagram, off)
 
-    if msg_type in (DECODE, WSPR_DECODE, REPLAY):
+    if msg_type == DECODE:
         return msg_type, client_id, _parse_decode(datagram, off)
+
+    if msg_type in (WSPR_DECODE, REPLAY):
+        # Deliberately a stub, not _parse_decode: a Replay carries a QDateTime and a
+        # WSPR decode a drift double, so parsing either with the Decode layout would
+        # produce confident nonsense. The caller ignores both types.
+        return msg_type, client_id, {}
 
     if msg_type == REPLY:
         return msg_type, client_id, _parse_reply(datagram, off)
@@ -175,7 +185,7 @@ def _parse_status(buf, off):
     return d
 
 
-def _parse_decode(buf, off, is_wspr=False):
+def _parse_decode(buf, off):
     d = {}
     (d["new_decode"],) = struct.unpack_from(">?", buf, off)
     off += 1
@@ -191,10 +201,7 @@ def _parse_decode(buf, off, is_wspr=False):
     d["message"], off = _unpack_string(buf, off)
     (d["low_confidence"],) = struct.unpack_from(">?", buf, off)
     off += 1
-    if is_wspr:
-        (d["off_air"],) = struct.unpack_from(">?", buf, off)
-    else:
-        (d["off_air"],) = struct.unpack_from(">?", buf, off)
+    (d["off_air"],) = struct.unpack_from(">?", buf, off)
     off += 1
     return d
 

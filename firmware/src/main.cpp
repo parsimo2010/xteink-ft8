@@ -34,7 +34,7 @@ struct Decode {
   int32_t dfreq;
   uint32_t time;
 };
-constexpr int MAX_ROWS = 60;
+constexpr int MAX_ROWS = cfg::MAX_DECODES;  // one source of truth: config.h
 Decode g_rows[MAX_ROWS];
 int g_rowCount = 0;
 
@@ -527,7 +527,8 @@ void render_net_diag() {
   char b[88];
   ui.textLarge(x, y, "NET DIAGNOSTIC", true);
   y += Ui::LARGE_H + 16;
-  snprintf(b, sizeof(b), "DEV   %s rot %d", cfg::DEVICE_NAME, cfg::UI_ROTATION);
+  snprintf(b, sizeof(b), "DEV   %s rot %d fw %s", cfg::DEVICE_NAME, cfg::UI_ROTATION,
+           cfg::FW_VERSION);
   ui.text(x, y, b, true); y += 22;
   snprintf(b, sizeof(b), "SSID  %s", cfg::WIFI_SSID);
   ui.text(x, y, b, true); y += 22;
@@ -632,15 +633,13 @@ void setup() {
 
   input.begin();
   net.begin();
-  cfg::serial().printf("[boot] %s (freeink '%s'), %ux%u logical, rotation %d\n",
-                       cfg::DEVICE_NAME, BoardConfig::ACTIVE.name,
+  cfg::serial().printf("[boot] %s fw %s (freeink '%s'), %ux%u logical, rotation %d\n",
+                       cfg::DEVICE_NAME, cfg::FW_VERSION, BoardConfig::ACTIVE.name,
                        (unsigned)g_lw, (unsigned)g_lh, cfg::UI_ROTATION);
   cfg::serial().printf("[net] joining SSID '%s', bridge %s:%u\n",
                 cfg::WIFI_SSID, cfg::BRIDGE_HOST, (unsigned)cfg::BRIDGE_PORT);
   g_dirty = true;
 }
-
-void maybe_enter_sleep();
 
 void loop() {
   input.update();

@@ -18,7 +18,28 @@
 
 #include <BoardConfig.h>
 
+// A build env must pick exactly one device. Without this, forgetting the
+// -DFREEINK_DEVICE_<NAME> flag silently compiles the X4 Pro pinout onto whatever
+// board you are holding - which on the Sticky means an unlit panel and a mystery.
+// NOTE: test the VALUES, not definedness: BoardConfig.h defines every
+// FREEINK_DEVICE_* (to 0 unless the command line says otherwise).
+#if FREEINK_DEVICE_X4PRO && FREEINK_DEVICE_STICKY
+#error "Both FREEINK_DEVICE_X4PRO and FREEINK_DEVICE_STICKY are enabled; pick one"
+#endif
+#if !FREEINK_DEVICE_X4PRO && !FREEINK_DEVICE_STICKY
+#error "No device selected: build with -DFREEINK_DEVICE_X4PRO=1 or -DFREEINK_DEVICE_STICKY=1 (see the platformio.ini envs)"
+#endif
+
 namespace cfg {
+
+// Firmware build identity, passed in by platformio.ini (-DXTEINK_FW_VERSION=...).
+// Kept as a string so it can ride in the hello frame and on the diagnostic screen.
+#ifdef XTEINK_FW_VERSION
+#define XTEINK_VERSION_STR XTEINK_FW_VERSION
+#else
+#define XTEINK_VERSION_STR "unknown"
+#endif
+inline constexpr const char* FW_VERSION = XTEINK_VERSION_STR;
 
 // --- WiFi (Pi ad-hoc access point) -----------------------------------------
 inline constexpr const char* WIFI_SSID = "XTEINK-FT8";

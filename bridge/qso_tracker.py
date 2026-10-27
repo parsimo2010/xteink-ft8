@@ -150,7 +150,7 @@ class QsoTracker:
         with self._lock:
             return self._by_id.get(did)
 
-    def cq_list(self, now_ts):
+    def cq_list(self):
         """Decodes that are CQ/QRZ, newest last."""
         with self._lock:
             return [d for d in self._decodes if d.is_cq]

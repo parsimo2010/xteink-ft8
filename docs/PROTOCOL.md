@@ -20,7 +20,7 @@ Each command is a JSON object with a `cmd` field.
 
 | cmd           | payload fields                                        | action |
 |---------------|-------------------------------------------------------|--------|
-| `hello`       | `{"cmd":"hello","version":1}`                          | announce device; bridge replies hello + snapshot |
+| `hello`       | `{"cmd":"hello","version":1,"fw_version":"0.1.0-dev"}`  | announce device; bridge replies hello + snapshot. `fw_version` is optional (older firmware omits it) and the bridge logs it |
 | `get_status`  | `{}`                                                 | return current WSJT-X status |
 | `get_decodes` | `{}`                                                 | return full decode list + seq |
 | `reply`       | `{"decode_id":<int>}`                                 | answer a CQ decode (WSJT-X `Reply`) |

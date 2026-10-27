@@ -101,6 +101,7 @@ void NetClient::connect_tcp() {
   JsonDocument doc;
   set_cmd(doc, "hello");
   doc["version"] = 1;
+  doc["fw_version"] = cfg::FW_VERSION;  // lets the bridge log what is out in the field
   send(std::move(doc));
 }
 
