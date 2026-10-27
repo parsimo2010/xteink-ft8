@@ -55,6 +55,27 @@ def freq_is_allowed(freq_hz):
     return any(lo <= f <= hi for lo, hi in BAND_EDGES)
 
 
+def _parse_rprt(resp):
+    """rigctld ends every command with 'RPRT <code>' (0 = success); a read command
+    may echo values on the line(s) before it.
+
+    Returns (ok, code). Anything unparseable is reported as a failure: treating "we
+could not understand the rig" as "the rig complied" is how a rejected QSY ends up
+looking successful on the device.
+    """
+    if not resp:
+        return False, None
+    for line in resp.decode("ascii", "replace").splitlines():
+        parts = line.split()
+        if parts and parts[0].upper() == "RPRT":
+            try:
+                code = int(parts[1])
+            except (IndexError, ValueError):
+                return False, None
+            return code == 0, code
+    return False, None
+
+
 class RigCtl:
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT):
         self.host = host
@@ -76,17 +97,29 @@ class RigCtl:
             return None
 
     def set_frequency(self, freq_hz):
-        """Set the VFO frequency. Returns (ok, detail)."""
+        """Set the VFO frequency.
+
+        Returns (state, detail) with state one of "ok", "rejected", "unreachable".
+        "rejected" means rigctld answered with a non-zero RPRT - the rig did NOT
+        change frequency - which must never be reported to the device as success.
+        """
         resp = self._request("F %d;\n" % int(freq_hz))
         if resp is None:
-            return False, "rigctld unreachable at %s:%d" % (self.host, self.port)
-        return True, ""
+            return "unreachable", "rigctld unreachable at %s:%d" % (self.host, self.port)
+        ok, code = _parse_rprt(resp)
+        if not ok:
+            return "rejected", "rigctld rejected F %d: RPRT %s (reply %.60r)" % (
+                int(freq_hz), code, resp)
+        return "ok", ""
 
     def set_mode(self, mode="USB"):
         resp = self._request("M %s 500;\n" % mode)
         if resp is None:
-            return False, "rigctld unreachable"
-        return True, ""
+            return "unreachable", "rigctld unreachable"
+        ok, code = _parse_rprt(resp)
+        if not ok:
+            return "rejected", "rigctld rejected M %s: RPRT %s" % (mode, code)
+        return "ok", ""
 
     @staticmethod
     def band_to_freq(band):

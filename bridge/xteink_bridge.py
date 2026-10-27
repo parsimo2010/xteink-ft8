@@ -246,11 +246,16 @@ class Bridge:
             return {"type": "error", "message": "freq %d Hz outside amateur allocations" % freq}
         if self.rig is None:
             return {"type": "not_supported", "cmd": "qsy"}
-        ok, detail = self.rig.set_frequency(freq)
-        if not ok:
+        state, detail = self.rig.set_frequency(freq)
+        if state == "unreachable":
+            log.warning("qsy to %d Hz: %s", freq, detail)
             return {"type": "not_supported", "cmd": "qsy", "detail": detail}
-        log.info("qsy to %d Hz", int(freq))
-        return {"type": "ok_dispatch", "freq_hz": int(freq)}
+        if state != "ok":
+            # The rig said no. Say so, instead of painting a band it never took.
+            log.warning("qsy to %d Hz refused: %s", freq, detail)
+            return {"type": "qsy_failed", "freq_hz": freq, "detail": detail}
+        log.info("qsy to %d Hz", freq)
+        return {"type": "ok_dispatch", "freq_hz": freq}
 
     def _cmd_decodes_ack(self, obj):
         self.tracker.ack(obj.get("seq"))

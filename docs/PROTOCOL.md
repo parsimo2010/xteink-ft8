@@ -45,6 +45,7 @@ Each command is a JSON object with a `cmd` field.
 | `no_such_decode` | `{"decode_id":N}` | requested decode no longer available |
 | `text_rejected` | `{"reason":"..","limit":N}` | free text refused by input validation |
 | `not_supported` | `{"cmd":".."}` | command not supported by this build |
+| `qsy_failed` | `{"freq_hz":N,"detail":".."}` | rigctld answered, the rig refused the frequency |
 | `pong`        | `{}`            | reply to `ping` |
 | `error`       | `{"message":".."}` | a recoverable error |
 
@@ -141,10 +142,21 @@ same rigctld as "Hamlib NET rigctl", so it picks up the new frequency via its
 own rig polling. If the user prefers to set band manually, this command is
 simply unused.
 
-> **Known limitation:** `ok_dispatch` means the bridge reached `rigctld`, not
-> that the rig accepted the frequency — the `RPRT <code>` return code is not
-> checked yet, so a rejected QSY still looks successful on the device. Fixing it
-> needs a bench check against a real rigctld (noted in `AGENTS.md`).
+`rigctld` ends every command with `RPRT <code>`, and the bridge now checks it:
+
+| rigctld | bridge answer |
+|---------|---------------|
+| `RPRT 0` (with or without an echoed frequency first) | `{"type":"ok_dispatch","freq_hz":N}` |
+| `RPRT <non-zero>`, or a reply that cannot be parsed | `{"type":"qsy_failed","freq_hz":N,"detail":".."}` |
+| not reachable at all | `{"type":"not_supported","cmd":"qsy","detail":".."}` |
+
+An unparsable reply counts as a failure: "we could not understand the rig" must
+never be reported to the device as "the rig complied".
+
+> **Note for the firmware:** `qsy_failed` is a new message type and the current
+> firmware ignores message types it does not know, so a refused QSY leaves the
+> device showing the last band reported by WSJT-X `Status` (correct, but silent).
+> Surfacing it on screen is a firmware follow-up.
 
 ## Failure semantics
 

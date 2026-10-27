@@ -258,6 +258,75 @@ def boundary_cases():
           all(rigctl.freq_is_allowed(f) for f in rigctl.BAND_CENTERS.values()))
 
 
+def rigctl_replies_are_checked():
+    """Issue 5: a rigctld rejection must not reach the device as success."""
+    pending = [b"RPRT 0\n"]
+
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(4)
+    port = srv.getsockname()[1]
+
+    def serve():
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return                     # stopped
+            with conn:
+                conn.recv(4096)
+                conn.sendall(pending.pop(0) if pending else b"RPRT 0\n")
+
+    threading.Thread(target=serve, daemon=True).start()
+    rig = rigctl.RigCtl("127.0.0.1", port)
+
+    state, _d = rig.set_frequency(14_074_000)
+    check("rigctld RPRT 0 -> ok", state == "ok", state)
+
+    pending[:] = [b"14074000\nRPRT 0\n"]   # some builds echo the read-back first
+    check("rigctld echo + RPRT 0 -> ok", rig.set_frequency(14_074_000)[0] == "ok")
+
+    pending[:] = [b"RPRT -6\n"]
+    state, detail = rig.set_frequency(14_074_000)
+    check("rigctld RPRT -6 -> rejected", state == "rejected", "%s %s" % (state, detail))
+    check("rejection detail names the code", "-6" in detail, detail)
+
+    pending[:] = [b"what is this\n"]
+    check("unparsable rigctld reply is NOT success",
+          rig.set_frequency(14_074_000)[0] == "rejected")
+
+    srv.close()
+    dead = rigctl.RigCtl("127.0.0.1", port)
+    check("no rigctld listening -> unreachable", dead.set_frequency(14_074_000)[0] == "unreachable")
+
+    # And through the bridge: the device must see qsy_failed, not ok_dispatch.
+    srv2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv2.bind(("127.0.0.1", 0))
+    srv2.listen(4)
+    port2 = srv2.getsockname()[1]
+
+    def serve2():
+        while True:
+            try:
+                conn, _ = srv2.accept()
+            except OSError:
+                return
+            with conn:
+                conn.recv(4096)
+                conn.sendall(b"RPRT -4\n")
+
+    threading.Thread(target=serve2, daemon=True).start()
+    args = xteink_bridge.parse_args(["--rx-port", str(RX_PORT + 2), "--ctrl-port", "23998",
+                                     "--port", str(DEV_PORT + 2),
+                                     "--rig-host", "127.0.0.1", "--rig-port", str(port2)])
+    b = xteink_bridge.Bridge(args)
+    resp = b.handle_command({"cmd": "qsy", "band": "20m"})
+    check("bridge reports qsy_failed when the rig refuses", resp.get("type") == "qsy_failed", str(resp))
+    srv2.close()
+
+
 def stalled_device_cannot_block_broadcast(server):
     """Issue 1: a device that stops reading must not be able to wedge the caller.
 
@@ -337,6 +406,7 @@ def main():
     classify_cases()
     tracker_survives_concurrent_ack()
     boundary_cases()
+    rigctl_replies_are_checked()
 
     args = xteink_bridge.parse_args([
         "--rx-port", str(RX_PORT),
