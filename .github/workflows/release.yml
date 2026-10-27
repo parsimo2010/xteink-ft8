@@ -47,8 +47,13 @@ jobs:
           mkdir -p dist/fw
           cp firmware/.pio/build/x4pro/bootloader.bin dist/fw/
           cp firmware/.pio/build/x4pro/partitions.bin dist/fw/
-          cp "$pio/framework-arduinoespressif32/tools/partitions/boot_app0.bin" dist/fw/ 2>/dev/null || true
+          cp "$pio/framework-arduinoespressif32/tools/partitions/boot_app0.bin" dist/fw/
           cp firmware/.pio/build/x4pro/firmware.bin dist/fw/
+          # Every blob must exist or the zip is bricked-on-arrival: flash.sh would
+          # fail on the operator's bench, in the field, where CI cannot be re-run.
+          for b in bootloader.bin partitions.bin boot_app0.bin firmware.bin; do
+            test -s "dist/fw/$b" || { echo "ERROR: dist/fw/$b missing or empty"; exit 1; }
+          done
           cat > dist/fw/flash.sh <<'EOF'
           #!/usr/bin/env bash
           # Flash the Xteink X4 Pro (put it in download mode first).
@@ -62,7 +67,9 @@ jobs:
             0x10000  firmware.bin
           EOF
           chmod +x dist/fw/flash.sh
-          (cd dist/fw && zip -r ../xteink-ft8-firmware-${VER}.zip .)
+          (cd dist/fw && zip -qr ../xteink-ft8-firmware-${VER}.zip .)
+          echo "==> xteink-ft8-firmware-${VER}.zip contains:"
+          unzip -l "dist/xteink-ft8-firmware-${VER}.zip"
           echo "asset=dist/xteink-ft8-firmware-${VER}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Package firmware (Sticky)
@@ -74,8 +81,11 @@ jobs:
           mkdir -p dist/fw-sticky
           cp firmware/.pio/build/sticky/bootloader.bin dist/fw-sticky/
           cp firmware/.pio/build/sticky/partitions.bin dist/fw-sticky/
-          cp "$pio/framework-arduinoespressif32/tools/partitions/boot_app0.bin" dist/fw-sticky/ 2>/dev/null || true
+          cp "$pio/framework-arduinoespressif32/tools/partitions/boot_app0.bin" dist/fw-sticky/
           cp firmware/.pio/build/sticky/firmware.bin dist/fw-sticky/
+          for b in bootloader.bin partitions.bin boot_app0.bin firmware.bin; do
+            test -s "dist/fw-sticky/$b" || { echo "ERROR: dist/fw-sticky/$b missing or empty"; exit 1; }
+          done
           cat > dist/fw-sticky/flash.sh <<'EOF'
           #!/usr/bin/env bash
           # Flash a Seeed reTerminal Sticky (env:sticky build).
@@ -92,7 +102,9 @@ jobs:
             0x10000  firmware.bin
           EOF
           chmod +x dist/fw-sticky/flash.sh
-          (cd dist/fw-sticky && zip -r ../xteink-ft8-firmware-sticky-${VER}.zip .)
+          (cd dist/fw-sticky && zip -qr ../xteink-ft8-firmware-sticky-${VER}.zip .)
+          echo "==> xteink-ft8-firmware-sticky-${VER}.zip contains:"
+          unzip -l "dist/xteink-ft8-firmware-sticky-${VER}.zip"
           echo "asset=dist/xteink-ft8-firmware-sticky-${VER}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Package bridge
@@ -102,8 +114,13 @@ jobs:
           VER="${{ github.ref_name }}"
           mkdir -p dist/bridge
           cp -r bridge/xteink_bridge.py bridge/wsjtx_udp.py bridge/qso_tracker.py \
-                bridge/device_server.py bridge/rigctl.py bridge/scripts bridge/README.md dist/bridge/
-          (cd dist/bridge && zip -r ../xteink-ft8-bridge-${VER}.zip .)
+                bridge/device_server.py bridge/rigctl.py bridge/scripts bridge/README.md \
+                bridge/requirements.txt bridge/test_bridge.py dist/bridge/
+          # An operator must be able to run the tests that ship with the product.
+          (cd dist/bridge && python3 test_bridge.py)
+          (cd dist/bridge && zip -qr ../xteink-ft8-bridge-${VER}.zip .)
+          echo "==> xteink-ft8-bridge-${VER}.zip contains:"
+          unzip -l "dist/xteink-ft8-bridge-${VER}.zip"
           echo "asset=dist/xteink-ft8-bridge-${VER}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release

@@ -42,9 +42,16 @@ workflow below then rebuilds and packages on a tag:
 4. Package the four firmware blobs + a `flash.sh` into a firmware zip (one per
    target; the Sticky zip carries the `sticky` build and adds
    `-fm dio -ff 80m -fs 32MB` to its esptool line).
-5. Package `bridge/` (Python + scripts, minus `.pio`/`__pycache__`) into a
-   bridge zip.
+5. Package `bridge/` (Python + scripts + `test_bridge.py`, minus `.pio` /
+   `__pycache__`) into a bridge zip, and run the tests from inside the staged zip
+   so an operator always gets a runnable test suite.
 6. Create a GitHub Release and attach both zips with versioned file names.
+
+Every packaging step asserts its inputs: each firmware zip must contain a non-empty
+`bootloader.bin`, `partitions.bin`, `boot_app0.bin` and `firmware.bin`, and the
+archive listing is printed to the job log. A missing blob **fails the build** -
+previously it was swallowed with `|| true`, which could ship a zip whose `flash.sh`
+dies on the operator's bench in the field.
 
 ## Before the first release (validation checklist)
 
@@ -64,7 +71,8 @@ workflow below then rebuilds and packages on a tag:
       battery %, UP/DOWN scroll, AI-click re-fetch, 1.5 s AI-hold sleep +
       power-button wake.
 - [x] `test_bridge.py` passes (55/55; CI runs it on every push to `main` and on
-      every pull request, not only when a tag is pushed).
+      every pull request, and the release packaging runs it again from inside the
+      staged bridge zip).
 
 ## Versioning
 
