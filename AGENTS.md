@@ -34,7 +34,51 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   * Real over-the-air QSO (tap decode -> Reply -> Auto Seq) — needs signals.
   * Headless Pi boot; `flash.sh` from a release zip. Do NOT tag a release
     until docs/RELEASE.md is green.
-- Bridge: implemented + passing (16/16; Python, stdlib only).
+- **2026-10-27: full code review + fix batch** (branch `fix/review-2026-10-27`,
+  findings logged as GitHub issues 1-12). What changed:
+  * `device_server.py` rewritten around **one bounded queue + one writer thread per
+    connection**. `broadcast()` can no longer block its caller - it used to
+    `sendall()` from the single `wsjtx-rx` thread, so one device that stopped
+    reading silenced the whole station while systemd still reported healthy (the
+    Blocker). Responses and pushes can no longer interleave on a socket, readers
+    use `select()` with a 120 s idle deadline so half-open peers are reaped, and
+    connections are capped at 4 with least-recently-active eviction.
+  * `QsoTracker` has a lock: an `ack()` racing an `add()` could delete a decode the
+    device already had on screen (`no_such_decode` on tap). Reproduced, now pinned
+    by a test that fails without the lock.
+  * CQ classification is token-based: `CQ DX|POTA|SOTA|WW|TEST|<ref> <call> <grid>`
+    and a directed `CQ W1AW K1ABC FN20` are recognised, `call` is the **transmitter**
+    (last callsign-shaped token), and a bare `CQ DX` is no longer a callable station
+    named DX.
+  * Boundary validation on the unauthenticated device port: free text must be
+    printable ASCII and <= `--max-text` (default **13**, the WSJT-X transmit limit -
+    a 6-character callsign needs `--max-text 14`), and `qsy` is refused outside the
+    amateur allocations unless `--no-band-check`. `setup_ap.sh` validates
+    AP_SSID/AP_PASS and writes `hostapd.conf` mode 0600.
+  * `rigctl` parses `RPRT <code>`: a refused QSY answers `qsy_failed` instead of
+    `ok_dispatch`. The firmware ignores unknown message types today, so on a refused
+    QSY the device stays silent-but-correct - showing `qsy_failed` is an open
+    firmware follow-up.
+  * Firmware networking: one framing path (`write_all()` + peek-then-commit; the
+    dead-but-correct `send_frame()` is deleted), a **static** 16 KB rx scratch
+    instead of a per-frame `new[]`, and a byte-bounded rx queue (`NC_QUEUE` 16 -> 6
+    plus `NC_QUEUE_BYTES`). Static RAM rises 51.6 KB -> 67.9 KB by design; what goes
+    away is the unbounded heap dependency. **Not re-flashed on hardware yet.**
+  * `install.sh` grants **audio** as well as dialout and the units set `AuxGroups=`
+    (a systemd service is not a logind session, so without this the QMX sound card
+    is listed by `aplay -l` but uncapturable). The issue-11 check on a real Pi is
+    still to be done.
+  * CI: new `.github/workflows/ci.yml` runs the bridge tests and both firmware builds
+    on every push/PR; PlatformIO pinned to 6.1.19 in both workflows; `release.yml`
+    hard-fails on a missing firmware blob instead of `|| true`, prints each zip's
+    contents, and ships + runs `test_bridge.py` in the bridge zip.
+  * A firmware version exists at last: `-DXTEINK_FW_VERSION` (PlatformIO needs the
+    nested form `-D...='"0.1.0-dev"'`, otherwise gcc sees a bare number), shown on
+    NET DIAGNOSTIC, sent as `fw_version` in `hello`, logged by the bridge.
+  * Verified by: `python test_bridge.py` **62/62**; `pio run` x4pro + sticky SUCCESS,
+    0 warnings; image header bytes identical to the pre-change baseline; `bash -n`
+    on every script. NOT verified on hardware or on a Pi.
+- Bridge: implemented + passing (62/62; Python, stdlib only).
 - Firmware: compiles clean; built current `firmware.bin` ~1.0 MB.
 - **2026-10: second build target `env:sticky` added** for the **Seeed reTerminal
   Sticky** (ESP32-S3R8, 3.97" 800x480 SSD1677 + GT911). **Compiles clean, NOT
@@ -54,21 +98,21 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   the Pi scripts' echo lines. Verified: `pio run` builds `x4pro` + `sticky`
   clean, `test_bridge.py` 16/16, `bash -n` on all scripts, submodule pin
   `e70baa2` is on the SDK's `origin/main` (so a fresh clone resolves).
-- **Deferred code findings from that review** (real, but every one of them
-  touches the field-working path and needs a bench/hardware check — do NOT
-  "fix" blind):
-  * `rigctl.set_frequency()` ignores rigctld's `RPRT <code>` reply, so a
-    rejected QSY still reports `ok_dispatch` to the device. Documented as a
-    known limitation in `docs/PROTOCOL.md`.
-  * `device_server.py` can call `conn.sendall()` from two threads on one socket
-    (command response + WSJT-X-driven `broadcast`); a partial write would
-    interleave frames. Self-healing (the firmware drops + reconnects on a
-    framing error) but wants a per-connection send lock.
-  * `NetClient::update()` flushes the TX queue with `_client.print(out)`, which
-    tolerates a short write — same failure mode on the device side.
+- **Findings from the 2026-10 review.** Fixed in the 2026-10-27 batch (see the dated
+  entry above): the rigctld `RPRT` omission, the two-writer `sendall()` race, the
+  `_client.print()` short-write path in `NetClient::update()`, the unlocked
+  `QsoTracker`, and the duplicate `maybe_enter_sleep()` declaration. Still open, and
+  needing hardware or a decision rather than a blind guess:
   * Firmware sorts pushed `decode` rows by SNR but ingests `decodes`/`hello`
     snapshots in bridge order, so the list can be unsorted right after link-up.
-  * `main.cpp` forward-declares `maybe_enter_sleep()` twice (harmless).
+  * Showing `qsy_failed` on the device: the bridge sends it, the firmware today
+    ignores message types it does not know.
+  * `CHANGELOG.md` still does not exist, and `--no-band-check` / `--max-text` are not
+    in the `docs/SETUP.md` service example yet.
+  * systemd `ProtectSystem=` / `PrivateTmp=` hardening was deliberately NOT applied:
+    `PrivateTmp` breaks the documented x11vnc workflow (the X11 socket lives in /tmp)
+    and `ProtectSystem=strict` stops WSJT-X writing its INI in `$HOME`.
+  * WiFi credentials in `config.h` are still literals (no `-D` override).
 
 ## Key architectural facts (do not "relearn" these)
 
@@ -268,7 +312,9 @@ compiled-out X4-Pro-specific bit is the sleep latch hold).
 
 ## Build & test commands
 
-- Bridge tests: `cd bridge && python test_bridge.py` (expect 16/16 pass).
+- Bridge tests: `cd bridge && python test_bridge.py` (expect 62/62 pass; CI now runs
+  this on every push and PR, and it must stay a plain `python` invocation - the
+  bridge has no third-party dependencies).
 - Firmware build: `cd firmware && ~/.platformio/penv/Scripts/pio.exe run -e x4pro`
   (or `-e sticky`, or bare `pio run` for both — `default_envs = x4pro, sticky`).
 - Firmware flash: `pio run -e x4pro -t upload` / `pio run -e sticky -t upload --upload-port <COM>`
