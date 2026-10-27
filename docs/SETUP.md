@@ -79,14 +79,20 @@ cd ~/xteink-ft8
 #    - installs xteink-rigctld.service: rigctld auto-detects the QRP Labs
 #      QMX/QMX+ on USB and shares it between WSJT-X and the bridge, so the
 #      X4 Pro's << / >> band buttons work,
-#    - adds the service user to the 'dialout' group (serial access).
+#    - adds the service user to 'dialout' (QMX serial) AND 'audio'
+#      (/dev/snd for WSJT-X; a headless service gets no logind udev ACLs, so
+#      group membership is what makes the QMX sound card usable at all).
 #    Derives the service user from SUDO_USER and the repo path from the
 #    script location, so plain `sudo bash ...` does the right thing.
 #    (Offline or in a hurry? SKIP_HAMLIB_BUILD=1 and/or SKIP_WSJTX_INSTALL=1.)
 sudo bash bridge/scripts/install.sh
 
 # 2) Configure the WiFi access point (SSID XTEINK-FT8 / pass ft8field,
-#    network 192.168.4.1/24). Optionally override with AP_SSID/AP_PASS.
+#    network 192.168.4.1/24). AP_PASS/AP_SSID may be overridden but must be
+#    8-63 chars of [A-Za-z0-9._-] - the script now refuses anything else.
+#    The default passphrase is published in this repository and the bridge's
+#    device port has no authentication, so change it for a real field site
+#    (and rebuild the firmware with the matching WIFI_PASSWORD).
 #    On Bookworm+ this creates a NetworkManager "shared" hotspot that
 #    auto-connects at boot; on older OS it falls back to hostapd+dnsmasq.
 sudo bash bridge/scripts/setup_ap.sh
@@ -221,7 +227,7 @@ The bridge logs `bridge ready: rx=127.0.0.1:2238 ... device=0.0.0.0:4510`.
 | **No decodes** on the X4 Pro | WSJT-X UDP Server port must match the bridge `--rx-port` (default **2238**). |
 | **Tap/CQ does nothing** (bridge logs the send, radio stays silent) | WSJT-X "Accept UDP requests" must be checked AND listening: `sudo ss -lunp \| grep 2237` should show the wsjtx process. Watch the WSJT-X Tx5 field while tapping CQ — if the text appears, the packet arrived. Then `sudo systemctl restart xteink-bridge` to pick up the send-from-rx-socket fix. |
 | **Band change no-ops** | `systemctl status xteink-rigctld`; QMX plugged in (`ls /dev/serial/by-id/` shows a `QRP_Labs` entry)? Service user in `dialout`? Try `sudo journalctl -u xteink-rigctld -e`. Override in `/etc/default/xteink-rigctld`. |
-| **No audio / TX silent** | QMX card visible in `aplay -l`? If dmesg shows "cannot create card instance" / probe error -16, remove any `snd_usb_audio index=0` modprobe file and `/etc/asound.conf` pin, reboot, then pick the QMX device in WSJT-X Settings → Audio. |
+| **No audio / TX silent** | QMX card visible in `aplay -l`? Then check **permission**, not presence: `ls -l /dev/snd` (nodes are group `audio`, mode `0660`) and `sudo -u pi aplay -l`. A headless WSJT-X runs as a systemd service, which gets no logind udev ACLs, so it needs the audio group — `install.sh` grants it, and `xteink-wsjtx.service` sets `AuxGroups=audio dialout`; after changing either, `sudo systemctl daemon-reload && sudo systemctl restart xteink-wsjtx`. If dmesg shows "cannot create card instance" / probe error -16, remove any `snd_usb_audio index=0` modprobe file and `/etc/asound.conf` pin, reboot, then pick the QMX device in WSJT-X Settings → Audio. |
 | WSJT-X "Test CAT" red | If Rig is a *direct serial* rig (e.g. QRP Labs QMX on /dev/ttyACM0): `xteink-rigctld` is holding the port — either set Rig to *Hamlib NET rigctl* @ `127.0.0.1:4532` (recommended; band buttons keep working) or `sudo systemctl disable --now xteink-rigctld`. Check `sudo journalctl -u xteink-rigctld -e`. |
 | WSJT-X service fails: **EXEC spawn ... permission denied** | Script lost its exec bit (old checkout). `git pull` (scripts are committed 755 now) or `chmod +x ~/xteink-ft8/bridge/scripts/*.sh && sudo systemctl restart xteink-wsjtx`. |
 | Bridge won't start | `sudo journalctl -u xteink-bridge -e` for the traceback. |

@@ -66,10 +66,27 @@ if [ "${SKIP_HAMLIB_BUILD:-0}" != "1" ]; then
   }
 fi
 
-# Serial port access for the service user (QMX/QMX+ USB CDC).
-if getent group dialout >/dev/null 2>&1; then
-  usermod -aG dialout "$USER_PI" || true
-fi
+# Device access for the service user.
+#   dialout - the QMX/QMX+ USB CDC serial port, used by rigctld.
+#   audio   - /dev/snd/*, used by WSJT-X for QMX audio in and out.
+# The audio group is not optional in a headless install: a systemd *system
+# service* is not a logind session, so it never receives the udev ACLs that let a
+# desktop user open the sound card. Without it the QMX shows up in `aplay -l` and
+# still cannot be captured from, which looks exactly like "WSJT-X decoded nothing".
+# xteink-wsjtx.service additionally sets AuxGroups= for the case where the operator
+# runs the service under a different user than the one edited here.
+for grp in dialout audio; do
+  if getent group "$grp" >/dev/null 2>&1; then
+    if id -nG "$USER_PI" | grep -qw "$grp"; then
+      echo "  $USER_PI is already in '$grp'"
+    else
+      usermod -aG "$grp" "$USER_PI" || true
+      echo "  added $USER_PI to '$grp' (takes effect on the next service restart)"
+    fi
+  else
+    echo "  WARNING: group '$grp' does not exist on this system" >&2
+  fi
+done
 
 # Install and enable the bridge service.
 install -m 644 "$SCRIPTS/xteink-bridge.service" /etc/systemd/system/

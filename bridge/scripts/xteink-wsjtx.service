@@ -11,6 +11,12 @@ ExecStart=%h/xteink-ft8/bridge/scripts/start_wsjtx_xvfb.sh
 Restart=always
 RestartSec=5
 User=pi
+# A system service is not a logind session, so it gets no udev ACLs on /dev/snd/*.
+# Without audio access the QMX USB card is visible in aplay -l but WSJT-X cannot
+# capture from it. install.sh also adds the service user to audio + dialout; this
+# covers a service running as some other user (needs systemd >= 248; older versions
+# log a warning about the unknown key and behave exactly as before).
+AuxGroups=audio dialout
 Environment=DISPLAY=:1
 StandardOutput=journal
 StandardError=journal

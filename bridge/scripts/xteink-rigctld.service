@@ -12,6 +12,9 @@ ExecStart=%h/xteink-ft8/bridge/scripts/start_rigctld.sh
 Restart=always
 RestartSec=5
 User=pi
+# QMX USB CDC (/dev/ttyACM*) access without relying on the user's group
+# membership. See the matching note in xteink-wsjtx.service.
+AuxGroups=dialout
 StandardOutput=journal
 StandardError=journal
 
