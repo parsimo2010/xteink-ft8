@@ -78,6 +78,9 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
   * Verified by: `python test_bridge.py` **62/62**; `pio run` x4pro + sticky SUCCESS,
     0 warnings; image header bytes identical to the pre-change baseline; `bash -n`
     on every script. NOT verified on hardware or on a Pi.
+  * **Nothing from that batch has been run on hardware or on a Pi.** The per-issue
+    bench checklist lives in `docs/HARDWARE-TODO.md` - read it before describing any
+    of the above as validated, and update it with results as they come in.
 - Bridge: implemented + passing (62/62; Python, stdlib only).
 - Firmware: compiles clean; built current `firmware.bin` ~1.0 MB.
 - **2026-10: second build target `env:sticky` added** for the **Seeed reTerminal

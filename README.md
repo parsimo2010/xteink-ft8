@@ -33,6 +33,8 @@ this works from a mountain top or a park.
   [`docs/FLASHING.md`](docs/FLASHING.md)
 * **Device ⇄ bridge protocol**: [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
 * **Future prebuilt releases**: [`docs/RELEASE.md`](docs/RELEASE.md)
+* **Still to prove on real hardware/Pi** (per-check instructions and what a pass
+  looks like): [`docs/HARDWARE-TODO.md`](docs/HARDWARE-TODO.md)
 
 > No release is published yet — hardware bring-up is done on the X4 Pro (the
 > firmware boots and runs on real hardware) but the end-to-end TX path is still

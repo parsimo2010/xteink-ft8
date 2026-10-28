@@ -55,6 +55,10 @@ dies on the operator's bench in the field.
 
 ## Before the first release (validation checklist)
 
+> The per-commit bench checklist for the 2026-10-27 review fixes lives in
+> [`HARDWARE-TODO.md`](HARDWARE-TODO.md) - it says exactly what to observe for each
+> change and what a pass looks like. Items below are the product-level gates.
+
 - [x] Firmware boots on a real X4 Pro; e-ink panel and touch confirmed
       (2026-09-12 bring-up: portrait UI, GT911 tap feedback, page buttons, and
       hold-power deep-sleep all verified on hardware).
