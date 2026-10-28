@@ -166,8 +166,9 @@ Not tied to one issue; each is a place where these commits could show up in use.
 
 ## What was deliberately NOT done (so nobody mistakes silence for tested)
 
-- No authentication handshake on TCP 4510 — needs protocol changes on both ends.
-  The port is validated but still trusted-by-network: keep it on the private AP.
+- No authentication handshake on TCP 4510 (tracked as **issue 13**) — needs protocol
+  changes on both ends. The port validates input but still trusts the network: keep it
+  on the private AP and never expose it beyond that.
 - No systemd `PrivateTmp=` / `ProtectSystem=` hardening: `PrivateTmp` would break the
   documented x11vnc workflow (X11 socket in `/tmp`) and `ProtectSystem=strict` would
   stop WSJT-X writing its INI in `$HOME`. Needs a Pi to get right.

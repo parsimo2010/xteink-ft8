@@ -116,6 +116,9 @@ Repo: https://github.com/parsimo2010/xteink-ft8 (owner GitHub account: parsimo20
     `PrivateTmp` breaks the documented x11vnc workflow (the X11 socket lives in /tmp)
     and `ProtectSystem=strict` stops WSJT-X writing its INI in `$HOME`.
   * WiFi credentials in `config.h` are still literals (no `-D` override).
+  * **No authentication on TCP 4510** (logged as issue 13): input is validated, the
+    peer is not identified. Needs a shared-secret handshake in `hello`, so firmware and
+    bridge move together. Until then the port is trusted-by-network - private AP only.
 
 ## Key architectural facts (do not "relearn" these)
 
