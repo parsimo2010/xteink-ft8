@@ -261,24 +261,29 @@ def boundary_cases():
 def rigctl_replies_are_checked():
     """Issue 5: a rigctld rejection must not reach the device as success."""
     pending = [b"RPRT 0\n"]
+    stop_serving = threading.Event()
 
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", 0))
     srv.listen(4)
+    srv.settimeout(0.2)                    # accept() must be exitable, see below
     port = srv.getsockname()[1]
 
     def serve():
-        while True:
+        while not stop_serving.is_set():
             try:
                 conn, _ = srv.accept()
+            except socket.timeout:
+                continue
             except OSError:
-                return                     # stopped
+                return                     # listening socket closed
             with conn:
                 conn.recv(4096)
                 conn.sendall(pending.pop(0) if pending else b"RPRT 0\n")
 
-    threading.Thread(target=serve, daemon=True).start()
+    server_thread = threading.Thread(target=serve, daemon=True)
+    server_thread.start()
     rig = rigctl.RigCtl("127.0.0.1", port)
 
     state, _d = rig.set_frequency(14_074_000)
@@ -296,9 +301,23 @@ def rigctl_replies_are_checked():
     check("unparsable rigctld reply is NOT success",
           rig.set_frequency(14_074_000)[0] == "rejected")
 
+    # Shut the fake rig down deterministically BEFORE probing for "unreachable":
+    # closing a listening socket that another thread is blocked in accept() on does
+    # not reliably stop it serving (on Linux the connection still succeeded, which is
+    # what CI caught). Ask the thread to stop, join it, then close.
+    stop_serving.set()
+    server_thread.join(timeout=2)
     srv.close()
-    dead = rigctl.RigCtl("127.0.0.1", port)
-    check("no rigctld listening -> unreachable", dead.set_frequency(14_074_000)[0] == "unreachable")
+
+    # A port nothing holds: bound once to get a free number, then released.
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.bind(("127.0.0.1", 0))
+    dead_port = probe.getsockname()[1]
+    probe.close()
+    dead = rigctl.RigCtl("127.0.0.1", dead_port)
+    state, detail = dead.set_frequency(14_074_000)
+    check("no rigctld listening -> unreachable", state == "unreachable",
+          "%s %s" % (state, detail))
 
     # And through the bridge: the device must see qsy_failed, not ok_dispatch.
     srv2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
